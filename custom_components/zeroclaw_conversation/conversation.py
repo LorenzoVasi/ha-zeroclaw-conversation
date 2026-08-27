@@ -25,7 +25,6 @@ import logging
 import uuid
 
 import voluptuous as vol
-
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant

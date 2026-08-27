@@ -1196,3 +1196,38 @@ this feature: `ConversationInput.context`/`Context.user_id`,
 `async_entries_for_config_entry`, and `notify.send_message`'s entity-target
 schema. Not verified end-to-end against a real instance — same acknowledged
 gap as the rest of this feature, see the entry above.
+
+## Pushed to GitHub; CI's first real run caught a real issue, and a real gap
+
+2026-08-27: repo pushed public to
+`github.com/LorenzoVasi/ha-zeroclaw-conversation` (branch renamed
+`master` → `main` first, to match what `validate.yml` already triggers
+on). `REPLACE_WITH_GH_OWNER` filled in across `manifest.json`/`README.md`.
+First CI run on `main`: `hassfest` passed clean; `ruff` and `hacs` both
+failed, for two different reasons worth recording separately.
+
+**`ruff` — real, fixed.** Four files (`api.py`, `config_flow.py`,
+`conversation.py`, `webhook.py`) had unsorted/unformatted import blocks
+(`I001`) — genuine issues introduced across the session's many edits to
+each file's import list, never run through a formatter locally along the
+way. `pip install ruff && python -m ruff check custom_components --fix`
+fixed all four automatically (mostly blank-line placement between import
+groups; one long `from .personality import a, b, c` line reformatted to
+one-per-line). Re-ran `ruff check` clean and `py_compile` clean before
+committing — an auto-fix changing import structure is exactly the kind of
+change worth actually re-verifying, not trusting blindly.
+
+**`hacs` — real, not fixed, documented instead.** `hacs/action`'s brands
+check failed: "The repository does not provide brand assets and is not
+listed in the Home Assistant brands repository." This is a genuine,
+correctly-flagged gap, not a false positive — this repo has no
+`custom_components/zeroclaw_conversation/brand/icon.png` (or an entry in
+the separate `home-assistant/brands` repo), and no image-generation tool
+was available in any session that's worked on this project so far (the
+add-on repo has the identical gap for its own `icon.png`/`logo.png`, see
+its own `docs/DECISIONS.md`). Left failing rather than faked with a
+placeholder — branding needs to be real, and a hastily-generated
+placeholder would just need replacing later anyway. This specifically
+blocks HACS **default-list** submission only (see the next entry); the
+integration installs and works fine as a HACS **custom repository** today,
+brand icon or not.

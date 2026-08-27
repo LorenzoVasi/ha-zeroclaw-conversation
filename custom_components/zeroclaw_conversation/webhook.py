@@ -27,7 +27,6 @@ import logging
 from dataclasses import asdict
 
 from aiohttp import web
-
 from homeassistant.components import persistent_notification, webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant

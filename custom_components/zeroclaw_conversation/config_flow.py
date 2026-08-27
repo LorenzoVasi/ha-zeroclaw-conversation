@@ -30,7 +30,6 @@ from typing import Any
 
 import aiohttp
 import voluptuous as vol
-
 from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers import selector
@@ -55,7 +54,11 @@ from .const import (
     DEFAULT_TIMEOUT,
     DOMAIN,
 )
-from .personality import build_personality_files, default_system_prompt, sanitize_agent_alias
+from .personality import (
+    build_personality_files,
+    default_system_prompt,
+    sanitize_agent_alias,
+)
 
 HOME_ASSISTANT_MCP_BUNDLE = "home_assistant"
 """The MCP bundle name the companion `zeroclaw` add-on seeds (server +

@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to ZeroClaw",
+        "description": "Enter the address of your ZeroClaw gateway (the zeroclaw Home Assistant add-on, or a standalone ZeroClaw install) and the API token you set there.",
+        "data": {
+          "host": "ZeroClaw gateway URL",
+          "api_token": "API token",
+          "ha_url": "Home Assistant URL (as reachable from the ZeroClaw container)"
+        },
+        "data_description": {
+          "ha_url": "Lets the agent proactively notify you (pushed to whoever last talked to it, via their own linked Home Assistant devices) and watch for events (e.g. \"tell me when the washing machine finishes\"). Leave blank to skip this feature."
+        }
+      },
+      "agent": {
+        "title": "Choose an agent",
+        "description": "Pick which ZeroClaw agent this integration should talk to, or create a new one.{fallback_note}",
+        "data": {
+          "agent": "Agent"
+        }
+      },
+      "new_agent": {
+        "title": "Create a new agent",
+        "description": "Name the new agent and pick which already-configured model provider it should use. Provider credentials are configured in the zeroclaw add-on itself (its own \"providers\" option), not here.",
+        "data": {
+          "name": "Agent name",
+          "model_provider": "Model provider"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach ZeroClaw at that address. Check the URL and that the add-on/daemon is running.",
+      "agent_name_required": "Enter a name for the new agent.",
+      "create_agent_failed": "ZeroClaw could not create the agent — check the details and try again."
+    },
+    "abort": {
+      "already_configured": "This ZeroClaw gateway is already configured.",
+      "no_providers_configured": "No model providers are configured on ZeroClaw yet. Add one in the zeroclaw add-on's Configuration tab (its \"providers\" option), or directly in ZeroClaw's own dashboard, then try again."
+    }
+  },
+  "services": {
+    "notify_agent": {
+      "name": "Notify agent",
+      "description": "Send a message to a ZeroClaw agent outside of an Assist conversation — typically from an automation triggered by a state change. The agent processes it as an instruction and can act on it using its normal tools.",
+      "fields": {
+        "message": {
+          "name": "Message",
+          "description": "What to tell the agent, in plain language (e.g. \"The washing machine just finished. Start the dryer.\")."
+        }
+      }
+    }
+  }
+}

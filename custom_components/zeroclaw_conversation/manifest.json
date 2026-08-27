@@ -1,0 +1,13 @@
+{
+  "domain": "zeroclaw_conversation",
+  "name": "ZeroClaw Conversation",
+  "codeowners": ["@LorenzoVasi"],
+  "config_flow": true,
+  "dependencies": ["conversation", "ai_task", "webhook", "persistent_notification"],
+  "documentation": "https://github.com/LorenzoVasi/ha-zeroclaw-conversation",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/LorenzoVasi/ha-zeroclaw-conversation/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

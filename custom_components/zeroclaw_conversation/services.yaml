@@ -1,0 +1,21 @@
+notify_agent:
+  name: Notify agent
+  description: >-
+    Send a message to a ZeroClaw agent outside of an Assist conversation —
+    typically from an automation triggered by a state change (e.g. "the
+    washing machine just finished"). The agent processes it as an
+    instruction and can act on it using its normal tools.
+  target:
+    entity:
+      domain: conversation
+      integration: zeroclaw_conversation
+  fields:
+    message:
+      name: Message
+      description: >-
+        What to tell the agent, in plain language (e.g. "The washing
+        machine just finished. Start the dryer.").
+      required: true
+      example: "The washing machine just finished."
+      selector:
+        text:

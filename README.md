@@ -1,5 +1,9 @@
 # ZeroClaw Conversation for Home Assistant
 
+<p align="center">
+  <img src="assets/ha-zeroclaw-conversation.png" alt="Home Assistant <-> ZeroClaw" width="340" />
+</p>
+
 A custom Home Assistant integration that registers
 [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) as:
 

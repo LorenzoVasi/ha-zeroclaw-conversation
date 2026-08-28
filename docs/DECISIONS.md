@@ -1231,3 +1231,60 @@ placeholder would just need replacing later anyway. This specifically
 blocks HACS **default-list** submission only (see the next entry); the
 integration installs and works fine as a HACS **custom repository** today,
 brand icon or not.
+
+## Filled the brand-icon gap: a from-scratch icon, drawn with Pillow
+
+User request (2026-08-28): generate the missing brand icon (the gap the
+entry above left open) and add hero images to both repos' READMEs — HA
+icon + ZeroClaw icon side by side here in the add-on's README, the same
+pair connected by a bidirectional arrow in this repo's README (to
+communicate "this integration is the two-way bridge between them").
+
+No image-generation tool was available (same limitation noted for
+`icon.png`/`logo.png` in earlier sessions), so this was drawn
+programmatically with Pillow (`pip install pillow`, no native
+dependencies needed, unlike `cairosvg` which failed on this Windows
+machine for lack of `libcairo-2.dll`) — plain shape primitives
+(`rounded_rectangle`, `polygon`, `ellipse`), not traced from or copied off
+any existing logo file. House glyph for Home Assistant in their documented
+brand blue (`#18BCF2`); for ZeroClaw, a small crab (not an abstract claw
+fragment — see below) in a warm orange, echoing their own public
+branding: their README's own H1 is literally "🦀 ZeroClaw", a crab/claw
+motif they picked themselves, not one invented here.
+
+**Getting the ZeroClaw side to actually read as "ZeroClaw" took three
+failed attempts before the fourth worked** — worth recording exactly
+which shapes didn't work and why, since "draw a claw" turned out to be a
+much harder small-icon problem than it sounds:
+
+1. A circle with a pie-slice wedge cut out (a "Pac-Man" silhouette) — read
+   as a pie chart, not a claw.
+2. Two straight tapered "finger" polygons fanning out from a hinge point —
+   read as a boomerang or a check-mark, not a claw, regardless of the
+   angle between them.
+3. A ring (annulus) with a wedge cut from one side, forming a "C"/bracket
+   shape — read as the letter C.
+4. **A small, whole, front-facing crab** (a rounded-capsule body, two
+   round claw nubs on the sides, three small leg dots per side, two eyes
+   on stalks with pupils) — reads unambiguously as "crab" at a glance,
+   including scaled down to 64×64. The lesson generalizes: an abstract
+   *fragment* of a recognizable thing (just a claw, detached) needs a lot
+   of context to read correctly at icon scale; the *whole, simplified*
+   thing reads instantly. Also matches the user's "carina" (cute) brief
+   far better than an abstract shape would have.
+
+Saved to `custom_components/zeroclaw_conversation/brand/icon.png`
+(256×256, the exact path HACS's brands check names in its own error
+message) — a diagonal-split badge, HA-blue/house upper-left,
+ZeroClaw-orange/crab lower-right. The two README hero images
+(`assets/*.png` in each repo) reuse the identical shape geometry as two
+separate solid-color badges instead of one split one, generated from the
+same coordinate math so there's no risk of a hand-transcribed copy
+drifting from the version actually looked at and approved.
+
+Verified by actually looking at the rendered output before shipping, not
+just trusting the drawing code — rendered a PNG preview after each of the
+four claw attempts and viewed it (catching failures 1–3 above), then
+checked the final crab design specifically at 64×64 to confirm it still
+reads correctly at realistic UI-icon scale, not just at the 256×256
+working resolution.

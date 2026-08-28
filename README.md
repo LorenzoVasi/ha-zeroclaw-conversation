@@ -112,7 +112,11 @@ agent list — see below) gets taught, via its own `TOOLS.md`, how to:
   machine finishes, then start the dryer": the agent arms a watch on the
   relevant entity's state instead of polling. **Fires once by default** —
   say "every time" or give an actual recurring schedule if you want it to
-  keep firing.
+  keep firing. Only fires for changes **nobody caused through Home
+  Assistant itself** — a physical switch, a Zigbee/Z-Wave device, another
+  automation. A change made via the dashboard, or one the agent itself
+  just made (e.g. because you asked it to over Assist), doesn't notify —
+  you already know, you just did it.
 - **Manage its own schedule** — ZeroClaw's own `cron_*` tools, unblocked by
   the add-on (see its own README/DOCS.md) so the agent can add/list/remove
   scheduled jobs without an approval prompt on every call.

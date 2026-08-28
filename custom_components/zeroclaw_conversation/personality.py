@@ -261,7 +261,14 @@ repeatedly: `{{"type": "create_watch", "entity_id": "<the entity>",
 "to_state": "<the state that means it happened>", "message": "<what to
 tell yourself when it fires>", "recurring": false}}`. When the entity
 reaches that state, `message` comes back to you as a fresh instruction —
-act on it with your normal tools, same as anything else you're told.
+act on it with your normal tools, same as anything else you're told. A
+watch only fires for changes nobody directly caused through Home
+Assistant — a physical switch, a Zigbee device, another automation. It
+does NOT fire for a change made through the dashboard, or one you
+yourself just made (e.g. via Assist) — the household already knows about
+those, so there's nothing to tell them. If asked why a notification
+didn't arrive, that's the first thing to check: was the change made
+through Home Assistant itself (dashboard or you), not an external device?
 
 **`"recurring"` defaults to `false` — a watch fires once and then
 disarms itself.** This matters: if the household says "tell me when the
@@ -298,7 +305,15 @@ controllare ripetutamente: `{{"type": "create_watch", "entity_id": "<l'entità>"
 "to_state": "<lo stato che significa che è successo>", "message": "<cosa
 dirti quando scatta>", "recurring": false}}`. Quando l'entità raggiunge
 quello stato, `message` ti torna indietro come un'istruzione nuova — agisci
-con i tuoi tool normali, come per qualsiasi altra cosa ti venga detta.
+con i tuoi tool normali, come per qualsiasi altra cosa ti venga detta. Un
+watch scatta solo per cambiamenti che nessuno ha causato direttamente
+tramite Home Assistant — un interruttore fisico, un dispositivo Zigbee,
+un'altra automazione. NON scatta per un cambiamento fatto dalla dashboard,
+né per uno che hai fatto tu stesso (es. tramite Assist) — la famiglia lo
+sa già, non c'è nulla da comunicare. Se ti chiedono perché una notifica
+non è arrivata, questa è la prima cosa da controllare: il cambiamento è
+stato fatto tramite Home Assistant stesso (dashboard o te), non da un
+dispositivo esterno?
 
 **`"recurring"` di default è `false` — un watch scatta una volta e poi si
 disattiva da solo.** Questo è importante: se la famiglia dice "avvisami

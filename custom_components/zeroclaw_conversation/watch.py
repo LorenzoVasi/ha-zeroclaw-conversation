@@ -17,6 +17,17 @@ explicit user requirement: asking "tell me when the washing machine
 finishes" without saying "every time" or giving another recurrence
 shouldn't silently keep re-triggering forever. `recurring=True` is the
 opt-in for "every time this happens," and stays armed after firing.
+
+A watch only fires for changes with **no attached HA user**
+(`new_state.context.user_id is None`) — another explicit user requirement:
+notify for a light turned off by a physical/Zigbee switch or another
+automation, but not for one the household just turned off themselves via
+the dashboard, or that ZeroClaw itself just turned off because it was
+asked to via Assist (both of those authenticate as a real HA user, so
+they're indistinguishable from each other by `user_id` alone — but both
+are equally "the person already knows," which is the actual distinction
+that matters here). See `_arm`'s `_on_change` for the exact check and
+docs/DECISIONS.md for why this is the right signal to filter on.
 """
 
 from __future__ import annotations
@@ -86,6 +97,24 @@ class WatchManager:
         def _on_change(event: Event[EventStateChangedData]) -> None:
             new_state = event.data["new_state"]
             if new_state is None or new_state.state != watch.to_state:
+                return
+            if new_state.context.user_id is not None:
+                # A person (via the dashboard) or ZeroClaw itself (via
+                # Assist, or a watch's own triggered follow-up action) made
+                # this change — both authenticate as a real HA user
+                # (a dashboard session, or the home_assistant_token's
+                # owning user for anything ZeroClaw does), and either way
+                # whoever caused it already knows. Only changes with no
+                # attached user — a Zigbee/ZHA device report, another
+                # automation, anything not directly attributable to a
+                # person acting through HA or to ZeroClaw itself — should
+                # actually notify. Confirmed by reading
+                # `homeassistant/core.py`: every user-initiated service
+                # call (dashboard click or REST API call with a bearer
+                # token, no difference between them) gets a `Context` with
+                # `user_id` set to the authenticated user; a device
+                # integration calling `states.async_set` directly (no
+                # service call, no authenticated caller) does not.
                 return
             self.hass.async_create_task(self._async_fire(watch))
 

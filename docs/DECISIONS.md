@@ -1321,3 +1321,59 @@ Checked visually again before shipping, same discipline as the drawn
 version: rendered and looked at all three compositions (side-by-side,
 bidirectional, and the layered brand icon) before saving them over the
 old files.
+
+## Watches were notifying for changes the household already knew about
+
+User bug report (2026-08-28): armed a watch on the lights in "camera di
+Lorenzo," turned them off with a **physical Zigbee device** (not the HA
+dashboard, not Assist) — no notification arrived. Diagnosis wasn't "the
+watch is broken" (`async_track_state_change_event` fires on *any* state
+change regardless of what caused it, dashboard or device — confirmed by
+re-reading the design, nothing in `_arm`/`_on_change` filtered on cause at
+all before this fix) but the opposite: **the watch had no way to
+distinguish who/what caused a change**, so the fix isn't "make Zigbee
+changes fire" (they always did) — it's "stop *also* firing for changes
+the household already knows about," which the user then generalized
+explicitly: notify for external devices, but never for a change made via
+the HA dashboard or via talking to the agent itself.
+
+The distinguishing signal is `Context.user_id` on the entity's `new_state`
+— confirmed by reading `homeassistant/core.py` directly (`State.context:
+Context`, `Context.user_id: str | None`): a browser dashboard action and a
+REST API call authenticated with a bearer token (which is exactly how
+ZeroClaw's own `home_assistant_token` authenticates every MCP tool call it
+makes, whether from Assist or from a watch's own triggered follow-up
+action) both get a `Context` with `user_id` set to the authenticated
+user — genuinely indistinguishable from each other by `user_id` alone,
+since in practice both are usually the *same* HA user (whoever generated
+that long-lived token for the household). A device integration (ZHA,
+Zigbee2MQTT, MQTT generally) calling `hass.states.async_set(...)` directly
+in response to a physical device report is not an authenticated service
+call at all, so its resulting `Context.user_id` stays `None`.
+
+That ambiguity turns out to be exactly the right filter for what was
+actually asked: "dashboard" and "the agent itself" don't need to be told
+apart, because both cases reduce to the same thing — the household already
+knows, because either they just clicked something or they just asked the
+agent to do it. `_on_change` (`watch.py`) now returns early when
+`new_state.context.user_id is not None`, firing only for changes with no
+attached user — physical/Zigbee/MQTT devices, other automations, anything
+not directly attributable to a person acting through Home Assistant or to
+ZeroClaw itself. Considered a dedicated separate HA user account for
+ZeroClaw's token as an alternative (would let dashboard vs. agent be told
+apart individually) and rejected it for now — more setup burden on the
+user for a distinction that isn't actually needed here, since the request
+was to treat both the same way.
+
+Also added a paragraph to `TOOLS.md`'s watch section telling the agent
+this rule explicitly, so if asked "why didn't you notify me," it can
+correctly diagnose "that change was made through Home Assistant itself"
+rather than guessing or claiming the watch is broken.
+
+Not verified end-to-end against a real instance (no network path to the
+user's own Zigbee/HA setup from this session) — the fix is verified
+against `homeassistant/core.py`'s actual `Context`/`State` field
+definitions, and follows directly from re-reading the existing, unchanged
+`async_track_state_change_event` design, but ask the user to re-test the
+exact scenario from their report (Zigbee off → notified; dashboard/Assist
+off → not notified) once deployed.

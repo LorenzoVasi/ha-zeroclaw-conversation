@@ -4,6 +4,12 @@
   <img src="assets/ha-zeroclaw-conversation.png" alt="Home Assistant <-> ZeroClaw" width="340" />
 </p>
 
+<p align="center">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=LorenzoVasi&repository=ha-zeroclaw-conversation&category=integration">
+    <img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open your Home Assistant instance and open this repository inside the Home Assistant Community Store." />
+  </a>
+</p>
+
 This is the piece that connects [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)
 to the parts of Home Assistant that actually talk to *you*. Install it and
 your ZeroClaw agent can answer through Assist's mic and text box, and be

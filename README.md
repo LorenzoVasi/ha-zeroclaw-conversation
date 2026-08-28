@@ -4,39 +4,49 @@
   <img src="assets/ha-zeroclaw-conversation.png" alt="Home Assistant <-> ZeroClaw" width="340" />
 </p>
 
-A custom Home Assistant integration that registers
-[ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) as:
+This is the piece that connects [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw)
+to the parts of Home Assistant that actually talk to *you*. Install it and
+your ZeroClaw agent can answer through Assist's mic and text box, and be
+called on by your own automations and scripts too. It's the companion to
+the [`zeroclaw` add-on](https://github.com/LorenzoVasi/addon-zeroclaw),
+which runs ZeroClaw itself — install that one first.
 
-- An **Assist conversation agent** — so the Assist mic/text box talks
-  directly to your ZeroClaw agent, which can act on Home Assistant (turn
-  things on/off, answer questions about state, etc.) via ZeroClaw's own MCP
-  connection back into Home Assistant's
-  [`mcp_server`](https://www.home-assistant.io/integrations/mcp_server/)
-  integration.
-- An [**AI Task**](https://www.home-assistant.io/integrations/ai_task/)
-  provider — so automations and scripts can call `ai_task.generate_data`
-  against ZeroClaw directly, independent of Assist.
+## What it can do
 
-This integration is the Assist-side half of a two-repo setup; the other half
-is the [`zeroclaw` Home Assistant add-on](https://github.com/LorenzoVasi/addon-zeroclaw)
-that actually runs ZeroClaw. Install that first.
+- **Becomes your Assist agent** — talk to it by voice or text through
+  Home Assistant's own Assist, and it answers back, acting on your home
+  when asked (turning things on/off, checking on the state of things,
+  whatever it's set up to handle).
+- **Remembers the conversation** while you're talking, and starts fresh
+  each time you open a new one — no mixing up unrelated chats.
+- **Knows who it's talking to.** If your Home Assistant account is linked
+  to one of your household's people, it recognizes you and greets you by
+  name at the start of a conversation.
+- **Notifies you proactively** — after finishing something you weren't
+  watching it do, it'll actually tell you, both in Home Assistant's
+  notification center and pushed to your phone.
+- **Watches for things happening around the house and reacts** — ask it to
+  keep an eye out for something ("tell me when the washing machine's
+  done, then start the dryer") and it arms a watch instead of endlessly
+  checking; every watch it's keeping shows up as its own entity, so you
+  can always see what it's waiting for.
+- **Can be triggered by your own automations**, not just by talking to it
+  — a new Home Assistant service lets any automation hand it an event
+  directly.
+- **Tidies up after itself**, clearing out old, abandoned conversations on
+  its own so nothing piles up unnoticed.
+- **Works as an AI Task provider** too, so scripts and automations can ask
+  it to generate data on demand, separately from Assist.
 
-## How it works
+## Requirements
 
-```
-Assist mic/text ─▶ this integration ─▶ GET /ws/chat on ZeroClaw's gateway
-                                        (?session_id=<conversation_id>&agent=<alias>)
-                  ◀─ speech reply ──── {"type": "done", "full_response": "..."}
-```
-
-One short-lived WebSocket connection per Assist turn, not a held-open
-socket — ZeroClaw resumes the same conversation history server-side as long
-as `session_id` (Home Assistant's own `conversation_id`) stays the same,
-which it does for as long as the Assist chat window stays open. Multi-turn
-context lives on ZeroClaw's side this way, not duplicated into Home
-Assistant's own chat log. (The `ai_task` platform uses the older, plain
-`POST /webhook` instead — a one-shot data-generation call has no need for
-conversation continuity.)
+- The [`zeroclaw` add-on](https://github.com/LorenzoVasi/addon-zeroclaw)
+  (or any reachable ZeroClaw instance) up and running.
+- Home Assistant's own
+  [MCP Server](https://www.home-assistant.io/integrations/mcp_server/)
+  integration, installed and enabled (**Settings → Devices & Services →
+  Add Integration → MCP Server**) on the ZeroClaw side — it's what lets
+  the agent actually act on your home rather than just talk about it.
 
 ## Install
 
@@ -54,127 +64,56 @@ Copy `custom_components/zeroclaw_conversation/` into your Home Assistant
 ## Set up
 
 1. Make sure the [`zeroclaw` add-on](https://github.com/LorenzoVasi/addon-zeroclaw)
-   (or any reachable ZeroClaw daemon) is running, and note the `api_token`
-   you configured for it.
+   (or any reachable ZeroClaw instance) is running, and note the
+   `api_token` you set for it.
 2. **Settings → Devices & Services → Add Integration → ZeroClaw Conversation**.
-3. Enter the gateway URL — pre-filled with `http://local-zeroclaw:42617`,
-   the confirmed internal hostname for a *locally installed* `zeroclaw`
-   add-on (slug `zeroclaw`, installed from "Local add-ons" rather than a
-   published repository; confirmed by running `hostname` inside the actual
-   container). If yours came from a published repository, or you have more
-   than one ZeroClaw instance reachable on your network, double check this
-   — run `hostname` inside the container (Portainer's console, or the SSH
-   add-on) rather than trusting Portainer's container-list name, which
-   shows the *Docker container name* (`app_local_zeroclaw`, underscored) —
-   a different, easily-confused string from the actual resolvable hostname
-   (hyphenated).
-4. When picking an agent, you can also **create a new one** right from this
-   flow instead of choosing an existing one: name it and pick which
-   **already-configured model provider** it should use. Provider
-   credentials themselves aren't entered here — configure at least one
-   provider first in the `zeroclaw` add-on's own **Configuration** tab
-   (its `providers` option), or directly in ZeroClaw's own dashboard; this
-   flow just picks from whatever's already set up (more reliable — see
-   `docs/DECISIONS.md` for why credential entry moved out of this
-   integration). The new agent is created with a personality suited to
-   being a respectful, household-aware home-automation helper (layered on
-   top of ZeroClaw's own default personality files, not a replacement),
-   and — if the `zeroclaw` add-on has Home Assistant integration configured
-   — is immediately granted its `home_assistant` MCP bundle, so it can act
-   on Home Assistant from the moment it's created rather than waiting for
-   the add-on's next restart. Add real household member names afterward,
-   either in ZeroClaw's own dashboard (`USER.md`) or by hand.
+3. Enter the gateway URL — it's pre-filled with the address that works for
+   a locally-installed `zeroclaw` add-on. If that doesn't match your setup
+   (a different install method, or more than one ZeroClaw around), you'll
+   need the right one — see `docs/DECISIONS.md` if you get stuck tracking
+   it down.
+4. When picking an agent, you can also create a brand-new one right from
+   this screen — just name it and choose which already-configured AI
+   provider it should use. It comes pre-shaped into a respectful,
+   household-aware home helper, and if Home Assistant access is set up on
+   the add-on side, it can act on your home from the moment it's created.
+   Add real household details afterward, either through ZeroClaw's own
+   dashboard or by hand.
 5. **Settings → Voice Assistants**, edit a pipeline, set **ZeroClaw** as its
    conversation agent.
 
-## Scheduling, notifications, and event-driven triggers
+Most of what's described above under "What it can do" — the notifications,
+the watches, the proactive greeting — only comes to life on a
+freshly-created agent, or after adding the matching snippet by hand to an
+existing one's personality files. The full details of exactly what to add
+and why live in `docs/DECISIONS.md`, kept up to date as this project
+evolves.
 
-Step 2 of setup also asks for one optional field: **Home Assistant URL**
-(default `http://homeassistant:8123`) — enables the whole feature below
-when set, skips it entirely when left blank.
+## Known iOS Companion app quirk
 
-Notifications always appear in Home Assistant's own notification center,
-and additionally push to whoever's **phone** most recently talked to the
-agent — resolved automatically from Home Assistant's own person/device
-linkage (whichever mobile-app device is registered to that user account),
-not something you pick once at setup. Nothing to configure for this part;
-just make sure whoever should get notified has the Home Assistant
-Companion App set up and has actually talked to the agent at least once
-since HA last restarted (there's no "last known user" before that).
+Voice input from the iOS Companion app's Assist screen can silently
+produce no reply if you let on-device silence detection end your turn —
+tap the mic button to manually end it instead and it works every time.
+This is a Companion app behavior, not something specific to this
+integration — see `docs/DECISIONS.md` for how that was tracked down.
 
-With Home Assistant URL set, a newly-created agent (not one picked from the existing-
-agent list — see below) gets taught, via its own `TOOLS.md`, how to:
+## Built with agentic AI development
 
-- **Notify you** — proactively, after finishing something you didn't watch
-  it do directly (a scheduled task, something triggered by an automation),
-  not for ordinary replies in a live conversation.
-- **Watch for an event and act on it** — e.g. "tell me when the washing
-  machine finishes, then start the dryer": the agent arms a watch on the
-  relevant entity's state instead of polling. **Fires once by default** —
-  say "every time" or give an actual recurring schedule if you want it to
-  keep firing. Only fires for changes **nobody caused through Home
-  Assistant itself** — a physical switch, a Zigbee/Z-Wave device, another
-  automation. A change made via the dashboard, or one the agent itself
-  just made (e.g. because you asked it to over Assist), doesn't notify —
-  you already know, you just did it. When it fires, the household is
-  notified directly by this integration — not left up to the agent
-  deciding to relay it.
-- **Manage its own schedule** — ZeroClaw's own `cron_*` tools, unblocked by
-  the add-on (see its own README/DOCS.md) so the agent can add/list/remove
-  scheduled jobs without an approval prompt on every call.
-
-**Every armed watch shows up as its own entity** — `sensor.<agent> watch:
-<entity>`, grouped under the agent's own device in Home Assistant. State
-is `armed` for as long as it's watching; attributes show which entity/
-state it's waiting for, its message, whether it repeats, when it was
-created, and when it last triggered. A one-shot watch's entity disappears
-the moment it fires (check Logbook for exactly when); a recurring one
-stays and its `last_triggered` attribute updates each time. No need to ask
-the agent "what are you watching for me?" — Developer Tools → States (or
-any dashboard) answers it directly.
-
-This also registers a **`zeroclaw_conversation.notify_agent`** Home
-Assistant service, targeting a ZeroClaw conversation entity — the other
-direction: an automation whose trigger is a state change can call this as
-its action, to tell the agent about an event directly instead of the agent
-finding out by polling. Example: an automation triggered by the washing
-machine turning off, action `notify_agent` with message "The washing
-machine just finished."
-
-An agent picked from the *existing*-agent list, or one created directly
-through ZeroClaw's own dashboard, doesn't get the `TOOLS.md` addition
-automatically — same retrofit story as the personality files in general
-(see `docs/DECISIONS.md`): add it by hand in ZeroClaw's dashboard if you
-want an existing agent to have this too.
-
-## Session cleanup
-
-Every time you close and reopen the Assist chat window, Home Assistant
-starts a fresh conversation on ZeroClaw's side — the previous one's
-history stays in ZeroClaw's own session list forever unless something
-deletes it. This integration does that automatically: every 6 hours (and
-once, 2 minutes after Home Assistant starts), it deletes any of its own
-sessions that have sat idle for more than 24 hours. Nothing to configure;
-runs in the background for every entry that has a specific agent selected
-(entries left on "auto" agent selection are skipped, since there's no safe
-way to tell which sessions were actually this integration's own).
+This integration — and its companion add-on — were built through agentic
+AI development: multiple coordinated Claude Code agents doing the actual
+research, coding, and testing, with a human checking real behavior against
+a running instance before trusting any of it. Every decision made along
+the way, including the mistakes and the dead ends, is logged in
+[`docs/DECISIONS.md`](docs/DECISIONS.md) for anyone curious how it
+actually came together.
 
 ## Status / known gaps
 
-- Setup only checks that the gateway is reachable (`GET /health`); it does
-  not validate the API token (that would mean triggering a real LLM call
-  during config flow). A wrong token surfaces on first real Assist turn
-  instead, with a clear error message.
-- `_async_handle_message` (the `ConversationEntity` method this integration
-  implements) was confirmed against Home Assistant's developer docs, not
-  against a live `homeassistant-core` checkout — verify against your actual
-  HA version. See `docs/DECISIONS.md`.
-- The notify/watch webhook, the `notify_agent` service, and watches
-  surviving an HA restart are not yet verified against a real running Home
-  Assistant instance — every Home Assistant API involved was checked
-  against current `home-assistant/core` source, but that's not the same as
-  having actually been loaded and exercised live. See `docs/DECISIONS.md`.
-- No automated tests yet.
+Still young: some corners (a few of the Home Assistant APIs this leans on,
+watches surviving a restart) have been checked carefully against real
+source but not yet fully exercised on a live, long-running instance. No
+automated test suite yet either. Nothing that should stop you from trying
+it — just worth knowing before you lean on it for something critical.
 
 ## License
 

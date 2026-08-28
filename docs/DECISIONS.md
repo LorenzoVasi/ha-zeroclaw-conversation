@@ -1626,3 +1626,158 @@ a session isn't practical to simulate) — the underlying API calls are
 confirmed working; the scheduling and age-filtering logic around them
 follows directly from that but hasn't been watched actually fire on a
 live schedule.
+
+## "Voice doesn't work from the iOS Companion app" — not a bug in this repo
+
+2026-08-28: user report — the agent worked from the web frontend and from
+typed text in the iOS Companion app's Assist screen, but not from voice on
+the same app: speech was transcribed correctly (visible in the UI), the
+"waiting for response" indicator appeared, and then nothing ever arrived —
+indefinitely. Manually pressing the mic button to end the turn (instead of
+letting on-device silence detection end it) made voice work too.
+
+Ruled out this integration as the cause without needing to read any of its
+code: typed text on the same device, through the same pipeline, reaches
+this integration's `conversation.py` and gets a normal reply — so
+`_async_handle_message` is being called and ZeroClaw is responding
+correctly. If a voice turn's transcribed text never produces a reply
+*either*, and there's no distinction in this integration's code between a
+turn that arrived via STT vs. one that arrived typed (both are just
+`user_input.text` by the time `_async_handle_message` sees it), the turn
+in question is not reaching this integration at all. The only place left
+for it to be lost is client-side, in the iOS Companion app's own handling
+of on-device dictation + automatic end-of-speech detection — before a
+pipeline run is ever dispatched to Home Assistant. Forcing the end of the
+turn manually (tapping the mic button rather than waiting for auto-detected
+silence) sidesteps whatever that client-side path is doing and works
+every time, which is consistent with this diagnosis.
+
+Not something this repo can fix: it's an Home Assistant iOS Companion App
+behavior, independent of which conversation agent is configured — would
+happen the same way with any agent, not specific to ZeroClaw. Documented
+here only so a future report of "voice doesn't work" isn't re-diagnosed as
+an integration bug from scratch; the practical workaround (manually ending
+the mic turn instead of relying on auto-silence-detection) is enough to
+unblock actual use.
+
+## `TOOLS.md`: require resolved `entity_id`s in watches, not friendly names
+
+User request: a watch's follow-up action should reference the exact
+entity (e.g. `switch.X`/`light.Y`), not a guessed-at friendly name, "in
+modo tale da essere sicuri del suo funzionamento."
+
+The watched entity's `entity_id` was already hard-validated —
+`_handle_create_watch` (`webhook.py`) rejects any `entity_id` that
+`hass.states.get()` doesn't resolve, before a watch is ever armed — so
+that half of the request was already covered structurally, not just by
+instruction. The gap is the *other* entity: whatever `message` describes
+acting on when the watch fires (e.g. "accendi le luci delle scale") is
+opaque free text as far as this integration is concerned — it's the
+agent's own future instruction to itself, delivered back over the
+stateless `/webhook` call with none of the current conversation's
+context, and this integration has no way to validate an entity reference
+buried inside prose. Nothing server-side to add here; the fix is
+`TOOLS.md` telling the agent to resolve exact `entity_id`s (via
+`GetLiveContext` or its entity-listing tool) for *both* the watched
+entity and any entity named in `message`, and to write the resolved
+`entity_id` directly into `message` (e.g. "accendi light.luci_scale") —
+so that when `message` comes back with none of this conversation's
+context, it still carries an unambiguous target instead of a friendly
+name the agent would otherwise have to re-guess from scratch at fire
+time. Same belt-and-suspenders shape as the `to_state` guidance right
+next to it (also instruction-only, also paired with what structural
+validation is possible — see the state-alias entry above): the difference
+here is that no structural validation is possible for `message`'s
+contents at all, so the instruction is the entire mitigation for that
+half.
+
+Verified: `personality.py` compiles and `build_personality_files` renders
+`TOOLS.md` correctly with the new paragraphs in both `en` and `it` (no
+`.format()` brace conflicts) — not verified against a real agent actually
+following the new instruction correctly, same acknowledged
+instruction-following gap as the rest of `TOOLS.md`.
+
+## Greeting the speaker by name
+
+User request (2026-08-28): "voglio che ad ogni sessione lui vede quali
+sono gli utenti (entità persone) presenti in casa e voglio che quando io
+accedo all'assistente lui riconosca chi sono tra quelli... e mi saluti
+tipo Ciao Lorenzo."
+
+Two distinct problems bundled in one request, solved differently:
+
+**"Knows the household roster"** doesn't need new code at all. The agent
+already has live Home Assistant access via its `home_assistant` MCP
+bundle, so `person.*` entities (name, home/away) are already one
+`GetLiveContext` call away — no reason to duplicate that into a
+personality file that would only go stale. `USER.md`'s "Who Lives
+Here"/"Chi Vive Qui" section (previously just a static "fill this in
+yourself" placeholder) now says exactly that: check `person.*` via
+`GetLiveContext` for the live, authoritative list; the free-text section
+stays for things Home Assistant can't express (preferences, nicknames).
+
+**"Recognizes who's currently talking and greets them"** is the real new
+capability, and *does* need code — an LLM reading `USER.md` has no way to
+connect "the text I'm receiving right now" to a specific household member
+on its own; Home Assistant's Assist protocol only ever hands a
+conversation agent plain text, nothing about the speaker's identity.
+`ConversationInput.context.user_id` (already read every turn since the
+notify-target feature, see the person_notify.py entry above) is the only
+thread back to a real identity — and the `person` integration is the only
+place that value maps to a human display name: reading
+`homeassistant/components/person/__init__.py`/`const.py` confirmed a
+person entity linked to a user account (`CONF_USER_ID`, set via
+**Settings → People** → "Linked user account") carries that same user_id
+right back out as a plain state attribute
+(`PersonEntityStateAttribute.USER_ID`, i.e. literally `"user_id"`) — the
+reverse direction of the exact join `person_notify.py` already used for
+notify targets. New `person_notify.py` function:
+`async_resolve_person_name(hass, user_id)`, a plain (not `async def`)
+function in the same style as `async_notify_targets_for_user` right next
+to it, since `hass.states.async_all()` is synchronous despite the name
+(HA's usual "call only from the event loop" convention, not a coroutine).
+
+Getting the greeting delivered required deciding when a turn is "the
+start of a new conversation" — the answer was already sitting in
+`conversation.py`, unused for this purpose: `user_input.conversation_id`
+is falsy exactly once per conversation, the very first turn, before this
+integration mints its own id (`conversation_id = user_input.conversation_id
+or uuid.uuid4().hex`) — captured as `is_new_conversation` *before* that
+line overwrites it. Deliberately did not use `/ws/chat`'s own
+`session_start.resumed` flag for this (briefly implemented, then reverted
+— see the `async_call_ws_chat` docstring's own note on `resumed` for what
+that flag is for) even though it answers a similar-sounding question:
+`resumed` only becomes known *after* the message frame carrying this
+turn's text has already been sent, so it can never gate what that same
+message contains — a chicken-and-egg problem `user_input.conversation_id`
+doesn't have, since it's known before anything is sent. `resumed` stays
+unused/unexposed; no reason to carry dead complexity for a question
+`conversation_id` already answers earlier and more directly.
+
+When both are true — new conversation, speaker resolved —
+`_async_handle_message` prepends a fixed, English, bracketed system note
+(`_SPEAKER_CONTEXT_TEMPLATE`) to `user_input.text` before sending it to
+ZeroClaw, naming the speaker and instructing the agent to greet them
+without quoting the note itself; `SOUL.md` (both `en`/`it`, same
+instruction) teaches the agent what that note means and how to react.
+English regardless of the household's own language — deliberately, not an
+oversight: the per-language `SOUL.md` "Always respond in `<language>`"
+directive (see `_localize`/`_resolve_ha_language`) already anchors reply
+language for all 64 supported languages, so the note doesn't need
+translating to be understood the same way English `SOUL.md` content
+already is for every non-en/it language today. No linked person entity for
+that HA user (guest login, or a household that's never linked `person.*`
+to user accounts) means `speaker_name` is `None` and nothing is prepended
+— silent fallback, not an error, matching every other "unresolvable, so
+skip gracefully" case in this integration.
+
+Verified: `person_notify.py`, `conversation.py`, `api.py` (reverted to its
+pre-`resumed` form), and `personality.py` all compile;
+`build_personality_files` renders the updated `USER.md`/`SOUL.md` for
+`en`/`it`/a fallback language (`de`) with the new content present and no
+`.format()` conflicts. Not verified against a real Home Assistant
+instance — same acknowledged gap as every other feature in this file that
+needs a live `person.*` entity linked to a real user account to exercise
+end-to-end; the existing agent (this household's "Mario") also needs the
+`USER.md`/`SOUL.md` additions applied by hand to get this at all, same
+retrofit story as every personality-file change here.

@@ -34,11 +34,29 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import ZeroClawError, async_call_webhook, async_call_ws_chat
 from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
+from .person_notify import async_resolve_person_name
 from .session_cleanup import async_setup_cleanup
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_NOTIFY_AGENT = "notify_agent"
+
+_SPEAKER_CONTEXT_TEMPLATE = (
+    "[Home Assistant context, not written by the household — this is the "
+    "first message of a brand-new conversation, and Home Assistant has "
+    "identified the speaker as \"{name}\". Greet them by name naturally as "
+    "part of your reply, then respond to their actual message below. Never "
+    "quote or mention this note itself.]\n\n{text}"
+)
+"""Prepended to `user_input.text` only on a conversation's first turn (see
+`_async_handle_message`), only when the speaker could be identified — see
+docs/DECISIONS.md, "Greeting the speaker by name". English regardless of
+the household's own language: SOUL.md's per-language "Always respond in
+<language>" directive (`personality.py`) already anchors the reply
+language, so this note doesn't need translating into all 64 supported
+languages to be understood the same way English personality-file content
+already is for every non-en/it language.
+"""
 
 
 async def async_setup_entry(
@@ -129,6 +147,11 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
         chat_log,
     ) -> conversation.ConversationResult:
         """Send one turn to ZeroClaw and return its reply."""
+        # Home Assistant leaves `conversation_id` unset on the very first
+        # turn of a new conversation and expects the entity to mint one
+        # (below) — the same signal used here to decide whether to greet
+        # the speaker by name, checked before it's overwritten.
+        is_new_conversation = not user_input.conversation_id
         conversation_id = user_input.conversation_id or uuid.uuid4().hex
         response = intent.IntentResponse(language=user_input.language)
 
@@ -139,17 +162,35 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
         # user_id` is `None` for some non-interactive contexts; leaving the
         # previous value in place then (not clearing it) means a stale-but-
         # real "last known user" beats notifying nobody.
+        speaker_name: str | None = None
         if user_input.context.user_id:
             self.hass.data.setdefault(DOMAIN, {}).setdefault(DATA_LAST_USER_ID, {})[
                 self._entry.entry_id
             ] = user_input.context.user_id
+            speaker_name = async_resolve_person_name(
+                self.hass, user_input.context.user_id
+            )
+
+        outgoing_text = user_input.text
+        if is_new_conversation and speaker_name:
+            outgoing_text = _SPEAKER_CONTEXT_TEMPLATE.format(
+                name=speaker_name, text=user_input.text
+            )
+        _LOGGER.debug(
+            "ZeroClaw speaker context: user_id=%s speaker_name=%s "
+            "is_new_conversation=%s (annotation %s)",
+            user_input.context.user_id,
+            speaker_name,
+            is_new_conversation,
+            "added" if outgoing_text != user_input.text else "skipped",
+        )
 
         try:
             reply = await async_call_ws_chat(
                 self.hass,
                 self._host,
                 self._token,
-                user_input.text,
+                outgoing_text,
                 conversation_id,
                 agent=self._agent,
             )

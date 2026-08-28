@@ -34,6 +34,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import ZeroClawError, async_call_webhook, async_call_ws_chat
 from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
+from .session_cleanup import async_setup_cleanup
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,15 +46,19 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the ZeroClaw conversation entity, and the `notify_agent`
-    entity service — the inbound half of "trigger the agent from a Home
-    Assistant automation instead of a token-costing heartbeat poll" (see
+    """Set up the ZeroClaw conversation entity, the `notify_agent` entity
+    service — the inbound half of "trigger the agent from a Home Assistant
+    automation instead of a token-costing heartbeat poll" (see
     docs/DECISIONS.md): an automation whose trigger is a state change (a
     washing machine finishing, say) calls this service, targeting this
     entity, as its action. `entity_platform.async_register_entity_service`
     handles the usual `entity_id`/`device_id`/`area_id` target resolution
     and dispatches to `async_notify_agent` on each matching entity — the
-    same pattern `services.yaml` documents for the UI/automation editor.
+    same pattern `services.yaml` documents for the UI/automation editor —
+    and periodic zombie-session cleanup (`session_cleanup.py`): every
+    Assist chat window mints a fresh ZeroClaw session when reopened (see
+    this module's own docstring), and nothing on ZeroClaw's own side ever
+    expires the previous one.
     """
     async_add_entities([ZeroClawConversationEntity(entry)])
 
@@ -63,6 +68,8 @@ async def async_setup_entry(
         {vol.Required("message"): str},
         "async_notify_agent",
     )
+
+    async_setup_cleanup(hass, entry)
 
 
 class ZeroClawConversationEntity(conversation.ConversationEntity):

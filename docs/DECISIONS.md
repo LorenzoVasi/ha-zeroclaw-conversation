@@ -1577,3 +1577,52 @@ the broadened trigger-recognition bullet actually gets the "quando X,
 potresti Y?" phrasing recognized this time is exactly the kind of thing
 only a live retest can confirm, same LLM-judgment caveat as every
 personality-file change in this project.
+
+## Zombie ZeroClaw sessions: periodic cleanup, not left to accumulate
+
+User report (2026-08-28): "ho notato su zeroclaw che le sessioni
+precedenti rimangono attive... una sessione morta" — every Assist chat
+window this integration talks through mints a fresh `conversation_id` when
+reopened (this repo's own confirmed finding, `ha-assist-chat.ts`), passed
+straight through as `/ws/chat`'s `session_id`. ZeroClaw resumes/persists
+history per `session_id` server-side (the whole point of the earlier
+"Correction" entry fixing multi-turn continuity) — but nothing ever told
+it the *previous* session_id was done. Every closed-and-reopened Assist
+window left a permanent, never-revisited entry in ZeroClaw's own session
+backend.
+
+Found the actual lever by reading `crates/zeroclaw-gateway/src/api.rs`
+directly rather than guessing: `GET /api/sessions` (list, with
+`agent_alias`/`channel_id`/`last_activity`/`session_key` per entry) and
+`DELETE /api/sessions/{id}` both already exist — this needed zero new
+ZeroClaw-side capability, only for this integration to actually call them.
+New `api.py` functions `async_list_sessions`/`async_delete_session`; new
+`session_cleanup.py` runs a cleanup pass 2 minutes after startup and every
+6 hours after that (`homeassistant.helpers.event.async_call_later`/
+`async_track_time_interval`, both confirmed exact signatures against
+`homeassistant/helpers/event.py`), deleting any session that's (a) this
+entry's own `agent_alias`, (b) has no `channel_id` (a channel-driven
+session — Telegram, etc. — is owned by that channel, not by this
+integration, even sharing the same agent), and (c) has been idle longer
+than a fixed 24-hour `ZOMBIE_MAX_AGE`. Skips cleanup entirely for an entry
+configured with "auto" agent selection (`CONF_AGENT` blank) — this
+integration has no way to know which alias ZeroClaw actually resolved
+"auto" to for a given session, so there's no way to safely attribute (and
+therefore no way to safely delete) anything in that case; silently doing
+nothing was judged safer than guessing.
+
+**Verified against a real running container**, not just read from source:
+opened two `/ws/chat` sessions with distinct `session_id`s (same technique
+as the earlier session-continuity verification), confirmed `GET /api/
+sessions` returned exactly the documented shape for both, `DELETE /api/
+sessions/gw_test-session-B` returned `{"deleted": true, ...}` and the
+session was actually gone from a follow-up `GET /api/sessions`, and a
+second `DELETE` of the same now-gone session returned `404 {"error":
+"Session not found"}` — confirming `async_delete_session`'s "404 = already
+gone, treat as success" handling matches real behavior, not an assumption
+about it. Not verified: the full periodic-cleanup path end-to-end against
+a real Home Assistant instance over real elapsed time (waiting 24 hours in
+a session isn't practical to simulate) — the underlying API calls are
+confirmed working; the scheduling and age-filtering logic around them
+follows directly from that but hasn't been watched actually fire on a
+live schedule.

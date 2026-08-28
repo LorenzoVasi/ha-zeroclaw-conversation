@@ -147,6 +147,18 @@ automatically — same retrofit story as the personality files in general
 (see `docs/DECISIONS.md`): add it by hand in ZeroClaw's dashboard if you
 want an existing agent to have this too.
 
+## Session cleanup
+
+Every time you close and reopen the Assist chat window, Home Assistant
+starts a fresh conversation on ZeroClaw's side — the previous one's
+history stays in ZeroClaw's own session list forever unless something
+deletes it. This integration does that automatically: every 6 hours (and
+once, 2 minutes after Home Assistant starts), it deletes any of its own
+sessions that have sat idle for more than 24 hours. Nothing to configure;
+runs in the background for every entry that has a specific agent selected
+(entries left on "auto" agent selection are skipped, since there's no safe
+way to tell which sessions were actually this integration's own).
+
 ## Status / known gaps
 
 - Setup only checks that the gateway is reachable (`GET /health`); it does

@@ -72,6 +72,14 @@ silently) when something similar happens again.
   setup — initial entities at startup come from `manager.list_for_entry`
   directly instead (load order: `WatchManager.async_load()` runs before
   platform setup, see `__init__.py`).
+- `session_cleanup.py`: deletes ZeroClaw's own `/ws/chat` sessions
+  (`api.py`'s `async_list_sessions`/`async_delete_session`, `GET`/`DELETE
+  /api/sessions`) that this entry's agent hasn't touched in 24h — every
+  closed-and-reopened Assist window otherwise leaves a permanent unused
+  entry in ZeroClaw's own session backend, see DECISIONS.md. Runs on a
+  timer set up from `conversation.py`'s `async_setup_entry`; skipped
+  entirely for an entry with no specific agent selected (`CONF_AGENT`
+  blank) since sessions can't be safely attributed in that case.
 
 ## Deployment
 

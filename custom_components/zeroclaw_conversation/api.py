@@ -382,3 +382,67 @@ async def async_grant_mcp_bundle(
         raise ZeroClawError(
             f"Could not grant MCP bundle '{bundle}' to agent '{agent}' on {host}: {err}"
         ) from err
+
+
+async def async_list_sessions(hass: HomeAssistant, host: str, token: str) -> list[dict]:
+    """Return `GET /api/sessions`'s `"sessions"` list — every `/ws/chat`
+    session ZeroClaw's own session backend has persisted, each entry
+    carrying `session_id` (display form), `session_key` (the full DB key
+    `async_delete_session` needs), `created_at`, `last_activity`,
+    `message_count`, `agent_alias`, `channel_id`, and an optional `name` —
+    confirmed against `crates/zeroclaw-gateway/src/api.rs`'s
+    `handle_api_sessions_list`. Used for zombie-session cleanup
+    (`session_cleanup.py`): every Assist chat window this integration ever
+    talks through mints a fresh `conversation_id`/`session_id` when
+    reopened (see `conversation.py`'s docstring), so the *previous*
+    session's history sits in ZeroClaw's session backend forever unless
+    something explicitly deletes it — nothing in ZeroClaw itself expires
+    these on its own.
+    """
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    session = async_get_clientsession(hass)
+    try:
+        async with session.get(
+            f"{host}/api/sessions",
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT),
+        ) as resp:
+            if resp.status != 200:
+                raise ZeroClawError(f"HTTP {resp.status}")
+            payload = await resp.json(content_type=None)
+            sessions = payload.get("sessions") if isinstance(payload, dict) else None
+            return list(sessions) if isinstance(sessions, list) else []
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise ZeroClawError(f"Could not list sessions from {host}: {err}") from err
+
+
+async def async_delete_session(
+    hass: HomeAssistant, host: str, token: str, session_key: str
+) -> None:
+    """`DELETE /api/sessions/{session_key}` — permanently remove one
+    session's persisted history. `session_key` must be the full DB key
+    `async_list_sessions` returns (not the shorter display `session_id` —
+    ZeroClaw accepts either form and resolves them the same way
+    internally, but the full key avoids relying on that fallback).
+    """
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    session = async_get_clientsession(hass)
+    try:
+        async with session.delete(
+            f"{host}/api/sessions/{session_key}",
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT),
+        ) as resp:
+            if resp.status not in (200, 404):
+                # 404 = already gone, treated as success (idempotent delete).
+                raise ZeroClawError(f"HTTP {resp.status} deleting session {session_key}")
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise ZeroClawError(
+            f"Could not delete session {session_key} on {host}: {err}"
+        ) from err

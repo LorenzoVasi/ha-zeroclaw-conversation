@@ -270,6 +270,17 @@ those, so there's nothing to tell them. If asked why a notification
 didn't arrive, that's the first thing to check: was the change made
 through Home Assistant itself (dashboard or you), not an external device?
 
+**`"to_state"` must be Home Assistant's actual internal state value —
+always English, never translated, even in an otherwise-Italian
+conversation.** "off" (never "spento"), "on" (never "acceso"), "open" /
+"closed" for covers, "locked" / "unlocked" for locks, "home" / "not_home"
+for presence. This is compared byte-for-byte against the entity's real
+state — get it wrong and the watch silently never fires, with no error at
+creation time (the request still succeeds). If you're not sure of the
+exact value for a given entity, check `GetLiveContext` first and copy the
+state string it reports for that entity or a similar one in the same
+domain, rather than guessing or translating.
+
 **`"recurring"` defaults to `false` — a watch fires once and then
 disarms itself.** This matters: if the household says "tell me when the
 washing machine finishes" with no mention of "every time" or a recurring
@@ -314,6 +325,18 @@ sa già, non c'è nulla da comunicare. Se ti chiedono perché una notifica
 non è arrivata, questa è la prima cosa da controllare: il cambiamento è
 stato fatto tramite Home Assistant stesso (dashboard o te), non da un
 dispositivo esterno?
+
+**`"to_state"` deve essere il valore di stato interno reale di Home
+Assistant — sempre in inglese, mai tradotto, anche in una conversazione
+altrimenti in italiano.** "off" (mai "spento"), "on" (mai "acceso"),
+"open" / "closed" per le coperture, "locked" / "unlocked" per le
+serrature, "home" / "not_home" per la presenza. Viene confrontato
+carattere per carattere con lo stato reale dell'entità — sbagliarlo
+significa che il watch non scatta mai, silenziosamente, senza nessun
+errore al momento della creazione (la richiesta va comunque a buon fine).
+Se non sei sicuro del valore esatto per una data entità, controlla prima
+`GetLiveContext` e copia la stringa di stato che riporta per quell'entità
+o una simile nello stesso dominio, invece di indovinare o tradurre.
 
 **`"recurring"` di default è `false` — un watch scatta una volta e poi si
 disattiva da solo.** Questo è importante: se la famiglia dice "avvisami

@@ -1377,3 +1377,66 @@ definitions, and follows directly from re-reading the existing, unchanged
 `async_track_state_change_event` design, but ask the user to re-test the
 exact scenario from their report (Zigbee off → notified; dashboard/Assist
 off → not notified) once deployed.
+
+## The real bug: watches store `to_state` as literal text, and the agent wrote Italian
+
+Immediate follow-up (2026-08-28): the `context.user_id` fix above wasn't
+actually the bug — the user confirmed a watch was genuinely armed
+(`list_watches` showed it), they turned the lights off, no notification
+arrived, **and the watch stayed armed** (didn't fire and disarm either).
+That combination rules out the `context.user_id` filter as the cause (a
+filtered-out change still leaves the watch armed, correctly — matches
+what was observed, but so does a watch that never matches at all) and
+points at something more basic: the watch's `to_state` was `"spento"`,
+Home Assistant's own Italian word for "off". `_on_change` (`watch.py`)
+compares `new_state.state != watch.to_state` as an exact string — and
+`new_state.state` for a light is always the literal English value `"off"`,
+never a translated one, regardless of what language Home Assistant's UI
+or this agent happens to be speaking. `"spento" != "off"` forever, so the
+watch could never fire, for any cause — Zigbee included, contrary to the
+previous entry's framing. No error surfaced at creation time either:
+`to_state` is just a free-text string as far as the webhook validation
+was concerned, any non-empty value passes.
+
+This is exactly the kind of mistake this project's own agent-facing text
+is prone to: the agent is instructed (repeatedly, throughout `SOUL.md`) to
+think and respond in Italian, and `to_state`'s own description in
+`TOOLS.md` — "the state that means it happened" — gave no hint that this
+one specific field needs to break that pattern and be Home Assistant's
+raw internal English value instead. A soft, personality-file-only fix
+would have the exact same reliability problem already documented for the
+cover/lock and Area/domain findings — worth fixing at both layers again:
+
+- **`TOOLS.md`** (`personality.py`, both `en`/`it`) now says explicitly
+  that `to_state` is Home Assistant's actual internal state string, always
+  English, gives the common values by domain (`on`/`off`, `open`/`closed`,
+  `locked`/`unlocked`, `home`/`not_home`), and tells the agent to check
+  `GetLiveContext` for the exact value rather than guessing when unsure.
+- **`webhook.py`**: a new `_STATE_ALIASES` table and `_normalize_state()`
+  applied to every `create_watch` call, mapping common Italian state words
+  (`spento`→`off`, `acceso`→`on`, `aperto`→`open`, `chiuso`→`closed`,
+  `bloccato`→`locked`, `sbloccato`→`unlocked`, `casa`→`home`,
+  `fuori`→`not_home`, and gendered/plural variants of each) to Home
+  Assistant's real values — independent of whether the agent gets the
+  `TOOLS.md` instruction right, the same belt-and-suspenders shape as
+  every other soft-plus-hard mitigation in this project. Anything not in
+  the table falls back to a lowercased, underscore-joined form of whatever
+  was sent (`"ON"` → `"on"`) rather than passing it through as-is, since
+  Home Assistant's real state values are conventionally lowercase
+  snake_case — a caller sending mixed case is far more likely to have made
+  a casing mistake than to be targeting a genuinely case-sensitive custom
+  state. `create_watch`'s response now echoes back the normalized
+  `to_state` actually stored, so the agent's own confirmation to the
+  household reflects what's really being compared, not what was typed.
+
+Verified the normalization function in isolation (pure string/dict logic,
+no Home Assistant imports, so directly runnable without a live instance):
+`"spento"`/`"Spento"`/`" spento "` all → `"off"`, `"off"` → `"off"`
+(idempotent), `"ON"` → `"on"`, `"not a real word"` →
+`"not_a_real_word"` (harmless fallback, not a crash), `"42.5"` → `"42.5"`
+(numeric sensor values pass through untouched). Not verified against a
+real watch actually firing end-to-end — same acknowledged gap as the
+entry above; ask the user to cancel the existing broken watch (created
+before this fix, so its stored `to_state` is still the literal `"spento"`
+on disk — this fix does not retroactively repair already-armed watches)
+and recreate it once deployed.

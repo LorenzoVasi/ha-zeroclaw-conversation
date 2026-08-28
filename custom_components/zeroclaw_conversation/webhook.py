@@ -147,6 +147,52 @@ async def _handle_notify(
     return web.json_response({"status": "ok"})
 
 
+# Home Assistant's entity states are a fixed, English-only vocabulary
+# ("off", not "spento") regardless of what language the agent (or the
+# household) is speaking — confirmed the hard way: a watch created with
+# `to_state: "spento"` never fires, ever, because the entity's actual
+# `new_state.state` is always the literal string "off". `_on_change`
+# (watch.py) compares strings exactly, so a mismatch here is silent and
+# permanent — no error at creation time (any non-empty string is a
+# syntactically valid `to_state`), just a watch that stays armed forever.
+# This alias table is the technical safeguard for that failure mode,
+# independent of whether the agent's own TOOLS.md instruction (also
+# strengthened alongside this, see personality.py) is followed correctly —
+# same belt-and-suspenders pattern as the cover/lock personality-file
+# mitigation elsewhere in this project.
+_STATE_ALIASES: dict[str, str] = {
+    # on/off (light, switch, fan, etc.)
+    "acceso": "on", "accesa": "on", "accesi": "on", "accese": "on",
+    "spento": "off", "spenta": "off", "spenti": "off", "spente": "off",
+    # cover (blinds, garage doors, gates)
+    "aperto": "open", "aperta": "open", "aperti": "open", "aperte": "open",
+    "chiuso": "closed", "chiusa": "closed", "chiusi": "closed", "chiuse": "closed",
+    # lock
+    "bloccato": "locked", "bloccata": "locked",
+    "sbloccato": "unlocked", "sbloccata": "unlocked",
+    # presence (device_tracker / person)
+    "casa": "home", "a_casa": "home", "in_casa": "home",
+    "fuori": "not_home", "assente": "not_home", "via": "not_home",
+    # generic on/off availability
+    "disponibile": "on", "non_disponibile": "unavailable",
+}
+
+
+def _normalize_state(raw: str) -> str:
+    """Map a natural-language state word (any language the household or
+    the agent might use) to Home Assistant's actual internal state string,
+    via `_STATE_ALIASES` if it's a recognized alias. Otherwise falls back
+    to the lowercased, underscore-joined form regardless (`"ON"` ->
+    `"on"`) — Home Assistant's own state strings are conventionally
+    lowercase snake_case across every standard domain, so normalizing
+    casing even for an unrecognized word is more likely correct than
+    preserving whatever case the caller happened to send; a numeric sensor
+    value passes through unaffected either way (digits have no case).
+    """
+    key = raw.strip().lower().replace(" ", "_")
+    return _STATE_ALIASES.get(key, key)
+
+
 async def _handle_create_watch(
     hass: HomeAssistant, entry: ConfigEntry, data: dict
 ) -> web.Response:
@@ -177,11 +223,15 @@ async def _handle_create_watch(
             {"error": '"message" (a non-empty string) is required'}, status=400
         )
 
+    normalized_state = _normalize_state(to_state)
+
     manager = hass.data[DOMAIN][DATA_WATCH_MANAGER]
     watch_id = await manager.async_create(
-        entry.entry_id, entity_id, to_state, message, recurring
+        entry.entry_id, entity_id, normalized_state, message, recurring
     )
-    return web.json_response({"status": "ok", "watch_id": watch_id})
+    return web.json_response(
+        {"status": "ok", "watch_id": watch_id, "to_state": normalized_state}
+    )
 
 
 async def _handle_cancel_watch(

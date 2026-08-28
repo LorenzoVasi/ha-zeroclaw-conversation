@@ -1814,3 +1814,27 @@ retrofit story as every other personality-file change: only newly-created
 agents get this version — an existing agent (e.g. this household's
 "Mario") keeps whatever SOUL.md it already has unless the household
 applies the same edit there by hand.
+
+## Sharpened the memory bullet: durable facts, not a command log
+
+Companion to a change in the `addon-zeroclaw` repo (see its own
+`docs/DECISIONS.md`, "`memory.auto_save = false`"): the add-on now turns
+off ZeroClaw's blanket auto-save of every message as conversation
+history, on user request ("non mi interessa che salvi in memoria che hai
+spento la luce, mi interessa che salvi... questa entità si trova in
+camera di X"). With that structural logging off, the *only* remaining
+path for anything durable to end up in memory is the agent's own
+`memory_store` tool calls — so the instruction guiding those calls needed
+to be explicit about what's actually worth storing, not left implicit.
+
+`SOUL.md`'s memory bullet (`_SOUL_ADDITIONS`, both `en`/`it`) went from
+"`memory_store` area/domain/entity names as learned" to naming the
+category directly — entity locations, aliases, household preferences,
+anything explicitly asked to be remembered — **and** naming the negative
+case explicitly ("turned off the kitchen light" isn't memory-worthy),
+since without `auto_save` catching routine actions as a side effect
+anymore, the agent has no safety net if it under-stores; better to be
+explicit about the boundary than rely on it inferring "don't log
+commands" on its own.
+
+Verified: `personality.py` compiles and lints clean.

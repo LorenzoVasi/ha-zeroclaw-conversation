@@ -3,12 +3,15 @@
 Bridges Home Assistant to a ZeroClaw gateway
 (https://github.com/zeroclaw-labs/zeroclaw), typically the companion
 `zeroclaw` Home Assistant add-on: as an Assist conversation agent
-(conversation.py) and as an `ai_task` provider for automations/scripts
-(ai_task.py). Both share one HTTP call helper (api.py). This module
-forwards the config entry to both platforms, and additionally owns the two
-pieces that aren't scoped to either platform specifically: the inbound
-notify/watch webhook (webhook.py) and the shared `WatchManager` singleton
-(watch.py) — see docs/DECISIONS.md, "Scheduling and event-driven triggers."
+(conversation.py), an `ai_task` provider for automations/scripts
+(ai_task.py), and — one `sensor` entity per armed watch (sensor.py) — a
+way to actually see what an agent is watching for from within Home
+Assistant itself. All three share one HTTP call helper (api.py). This
+module forwards the config entry to all three platforms, and additionally
+owns the two pieces that aren't scoped to any one platform specifically:
+the inbound notify/watch webhook (webhook.py) and the shared
+`WatchManager` singleton (watch.py) — see docs/DECISIONS.md, "Scheduling
+and event-driven triggers."
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from .const import DATA_WATCH_MANAGER, DOMAIN
 from .watch import WatchManager
 from .webhook import async_register_webhook, async_unregister_webhook
 
-PLATFORMS = ["conversation", "ai_task"]
+PLATFORMS = ["conversation", "ai_task", "sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -1440,3 +1440,90 @@ entry above; ask the user to cancel the existing broken watch (created
 before this fix, so its stored `to_state` is still the literal `"spento"`
 on disk — this fix does not retroactively repair already-armed watches)
 and recreate it once deployed.
+
+## Watch visibility as HA entities, and the notification stopped being optional
+
+Immediate follow-up (2026-08-28): with the `to_state` bug fixed, the user
+recreated the watch, turned the lights off — the watch fired (disarmed
+itself, matching one-shot behavior) — and still got no notification. That
+ruled out `to_state` too, and pointed at the architecture of firing
+itself: `_async_fire` (`watch.py`) only ever sent `watch.message` to the
+**agent**, via a stateless `/webhook` call, on the assumption the agent
+would then itself decide to call the notify webhook to actually tell the
+household. That assumption was never actually enforced anywhere — a
+`SOUL.md` bullet says to notify "after finishing something," which reads
+naturally for an *action* (start the dryer, then tell them) but not
+obviously for a *pure* watch message that's already just informational
+text ("le luci sono state spente") with nothing to finish. The model
+receiving that message plausibly just... didn't act on it. Soft,
+personality-file-only enforcement, same class of problem as the cover/lock
+and `to_state` findings above, and same fix shape: pair it with something
+that doesn't depend on the model's judgment.
+
+**Fix**: `webhook.py`'s notify logic was pulled out of `_handle_notify`
+into a standalone `async_notify_household(hass, entry, message)`.
+`_async_fire` now calls it **directly** — the household is notified the
+instant a watch fires, unconditionally, by this integration's own code,
+not by hoping the agent relays it. The agent is *still* separately told
+too (same `/webhook` call as before, now clearly commented as best-effort
+"for any follow-up action"), so "...then start the dryer" keeps working —
+firing is now two independent things happening (guaranteed notify, plus a
+best-effort instruction to the agent) instead of one thing depending on
+the other. Traded off explicitly, not silently: a watch whose message
+implies an action can now produce two notifications in practice — the raw
+watch message itself, and whatever the agent's own follow-up naturally
+produces (e.g. its own "Ho avviato l'asciugatrice!" if `TOOLS.md`'s
+"notify after finishing something" instruction *does* fire this time).
+Preferred over silence: the user's stated core problem, twice now, was
+"I'm not being told," not "I was told slightly redundantly."
+
+**Watch visibility, the actual feature requested this turn**: "voglio
+che... generi un'entità di tipo watch legato a quell'agente... quali sono
+i watch attivi, quando vengono triggerati, se avvisato una sola volta o
+sempre." New `sensor.py`: one entity per armed watch, grouped under its
+agent's existing device (same `identifiers` as `conversation.py`'s
+entity), state constant `"armed"` for as long as it's armed,
+`extra_state_attributes` carrying `entity_id`/`to_state`/`message`/
+`recurring`/`created_at`/`last_triggered`. Deliberately not a
+"disarmed"/"triggered" state that lingers — the entity is **removed
+outright** the moment the underlying watch stops being armed (fired and
+one-shot, or explicitly cancelled), matching the watch's real lifecycle;
+a recurring watch's entity instead stays and just updates
+`last_triggered` in place after each fire. This also directly answers
+"quando vengono triggerati" for free: Home Assistant's own recorder keeps
+an entity's state/attribute history queryable even after the entity is
+later removed, so a fired one-shot watch's trigger moment (and its
+`last_triggered` attribute update, for a recurring one) is still visible
+in Logbook/History afterward, without this integration building any
+custom event logging of its own.
+
+Watches are created from an HTTP webhook request (an agent's own tool
+call), not from anything `sensor.py`'s platform setup does — so
+`WatchManager` can't just hand new entities to `async_add_entities` the
+normal way when one appears mid-session. Wired through
+`homeassistant.helpers.dispatcher` instead (confirmed exact
+`async_dispatcher_connect`/`async_dispatcher_send` signatures against
+`homeassistant/helpers/dispatcher.py`): three per-entry signal names
+(`SIGNAL_WATCH_ADDED`/`_REMOVED`/`_UPDATED`, `const.py`, each formatted
+with `entry_id` so a different agent's watches never cross-notify),
+`WatchManager` sends on create/cancel/fire, `sensor.py` listens and
+adds/removes/updates entities accordingly. Startup is a separate path,
+not a signal: `WatchManager.async_load()` (restoring watches persisted
+from a previous run) runs in `__init__.py` *before*
+`async_forward_entry_setups` — confirmed this ordering is preserved, not
+assumed — so by the time `sensor.py`'s own `async_setup_entry` runs,
+`manager.list_for_entry(entry.entry_id)` already reflects anything
+restored from storage, and initial entities are built directly from that
+rather than needing a signal sent before anything was listening for it.
+
+Every new Home Assistant API used here was checked against current core
+source before use, same discipline as every entry in this file:
+`SensorEntity`, `Entity.async_remove(*, force_remove: bool = False)`
+(confirmed exact signature — `force_remove=True` actually deletes the
+state rather than marking it unavailable), and the dispatcher signatures
+above. Not verified end-to-end against a real Home Assistant instance —
+same acknowledged gap as every entry above; ask the user to confirm both
+fixes together: recreate the watch, trigger it via an external device, and
+check that (a) a notification actually lands this time and (b) a
+`sensor.<agent>_watch_...` entity appears while armed and disappears (with
+a Logbook entry) the moment it fires.

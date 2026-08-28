@@ -7,10 +7,11 @@ Deliberately NOT a real Home Assistant automation entity: having an LLM
 author raw automation YAML/JSON through the config API was considered and
 rejected (see docs/DECISIONS.md) — a watch here is plain Python state owned
 by this integration, armed with `async_track_state_change_event`. Nothing
-shows up in Settings → Automations; `list_watches` (see `webhook.py`) is
-how an agent (or a person, indirectly, by asking the agent) sees what's
-armed. Persisted via `Store` so a watch created before an HA restart is
-still armed after one.
+shows up in Settings → Automations; instead, each watch gets its own
+`sensor` entity (see `sensor.py`) grouped under its agent's device, so
+"what's armed, when did it last fire" is visible in Home Assistant itself,
+not just answerable by asking the agent via `list_watches`. Persisted via
+`Store` so a watch created before an HA restart is still armed after one.
 
 A watch fires once and deactivates itself by default (`recurring=False`) —
 explicit user requirement: asking "tell me when the washing machine
@@ -28,6 +29,16 @@ they're indistinguishable from each other by `user_id` alone — but both
 are equally "the person already knows," which is the actual distinction
 that matters here). See `_arm`'s `_on_change` for the exact check and
 docs/DECISIONS.md for why this is the right signal to filter on.
+
+Firing a watch **guarantees** a household notification
+(`webhook.async_notify_household`, the same path `{"type": "notify"}`
+uses) — it does not just forward `message` to the agent and hope it
+decides to notify on its own. The agent is *additionally* told too (still
+via a webhook call, best-effort), so it can act further if the message
+implies an action ("...then start the dryer"), but the notification itself
+no longer depends on the agent's own judgment to actually happen — see
+docs/DECISIONS.md for the report that led to this (a fired, disarmed watch
+that never actually notified the household).
 """
 
 from __future__ import annotations
@@ -37,11 +48,20 @@ import uuid
 from dataclasses import asdict, dataclass
 
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .api import ZeroClawError, async_call_webhook
-from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST
+from .const import (
+    CONF_AGENT,
+    CONF_API_TOKEN,
+    CONF_HOST,
+    SIGNAL_WATCH_ADDED,
+    SIGNAL_WATCH_REMOVED,
+    SIGNAL_WATCH_UPDATED,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,6 +79,8 @@ class Watch:
     to_state: str
     message: str
     recurring: bool = False
+    created_at: str = ""
+    last_triggered: str | None = None
 
 
 class WatchManager:
@@ -79,7 +101,10 @@ class WatchManager:
         Call once, at first setup — safe to call again (idempotent: a
         second load would just re-read the same file into the same dict,
         harmlessly re-arming already-armed watches), but `__init__.py`
-        guards against that anyway.
+        guards against that anyway. Does NOT dispatch `SIGNAL_WATCH_ADDED`
+        — `sensor.py`'s own `async_setup_entry` builds initial entities
+        directly from `list_for_entry` instead, since platform setup runs
+        after this and would miss a signal sent before it was listening.
         """
         data = await self._store.async_load() or {}
         for raw in data.get("watches", []):
@@ -130,6 +155,22 @@ class WatchManager:
             await self.async_cancel(watch.watch_id)
             return
 
+        # Import here, not at module level: webhook.py doesn't import this
+        # module, so there's no real cycle, but keeping the import local
+        # keeps the "who depends on whom" story obvious from a quick read
+        # of each file's own top-of-file imports.
+        from .webhook import async_notify_household
+
+        try:
+            await async_notify_household(self.hass, entry, watch.message)
+        except Exception as err:  # noqa: BLE001 - a watch firing must not crash the event loop
+            _LOGGER.warning(
+                "Watch '%s' on %s fired, but notifying the household failed: %s",
+                watch.watch_id,
+                watch.entity_id,
+                err,
+            )
+
         try:
             await async_call_webhook(
                 self.hass,
@@ -141,13 +182,21 @@ class WatchManager:
             )
         except ZeroClawError as err:
             _LOGGER.warning(
-                "Watch '%s' on %s fired, but notifying the agent failed: %s",
+                "Watch '%s' on %s fired, but telling the agent (for any "
+                "follow-up action) failed: %s",
                 watch.watch_id,
                 watch.entity_id,
                 err,
             )
 
-        if not watch.recurring:
+        watch.last_triggered = dt_util.utcnow().isoformat()
+
+        if watch.recurring:
+            await self._async_save()
+            async_dispatcher_send(
+                self.hass, SIGNAL_WATCH_UPDATED.format(entry_id=watch.entry_id), watch
+            )
+        else:
             await self.async_cancel(watch.watch_id)
 
     async def async_create(
@@ -167,10 +216,12 @@ class WatchManager:
             to_state=to_state,
             message=message,
             recurring=recurring,
+            created_at=dt_util.utcnow().isoformat(),
         )
         self._watches[watch_id] = watch
         self._arm(watch)
         await self._async_save()
+        async_dispatcher_send(self.hass, SIGNAL_WATCH_ADDED.format(entry_id=entry_id), watch)
         return watch_id
 
     async def async_cancel(self, watch_id: str) -> bool:
@@ -178,9 +229,13 @@ class WatchManager:
         unsub = self._unsubs.pop(watch_id, None)
         if unsub is not None:
             unsub()
-        existed = self._watches.pop(watch_id, None) is not None
+        watch = self._watches.pop(watch_id, None)
+        existed = watch is not None
         if existed:
             await self._async_save()
+            async_dispatcher_send(
+                self.hass, SIGNAL_WATCH_REMOVED.format(entry_id=watch.entry_id), watch_id
+            )
         return existed
 
     def list_for_entry(self, entry_id: str) -> list[Watch]:

@@ -60,4 +60,15 @@ DATA_WATCH_MANAGER = "watch_manager"
 # persistent-notification-only in that case, same as before.
 DATA_LAST_USER_ID = "last_user_id"
 
+# Dispatcher signals `sensor.py` listens on to add/remove/update a watch's
+# entity as `WatchManager` (watch.py) arms, cancels, or fires one — watches
+# are created from an HTTP webhook call, not from anything the entity
+# platform itself does, so there's no other path for the platform to learn
+# about them as they come and go. One signal name per entry (formatted with
+# `entry_id`), not global, so entities from a different agent's watches
+# never cross-notify.
+SIGNAL_WATCH_ADDED = f"{DOMAIN}_watch_added_{{entry_id}}"
+SIGNAL_WATCH_REMOVED = f"{DOMAIN}_watch_removed_{{entry_id}}"
+SIGNAL_WATCH_UPDATED = f"{DOMAIN}_watch_updated_{{entry_id}}"
+
 DEFAULT_TIMEOUT = 30

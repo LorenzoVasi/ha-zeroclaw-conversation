@@ -98,28 +98,28 @@ async def _handle_webhook(
     return web.json_response({"error": f"unknown \"type\": {msg_type!r}"}, status=400)
 
 
-async def _handle_notify(
-    hass: HomeAssistant, entry: ConfigEntry, data: dict
-) -> web.Response:
-    """`{"type": "notify", "message": "..."}` — create a household
-    notification (a fresh one each call — `notification_id` left unset so
-    Home Assistant generates a new one rather than overwriting the last
-    notification from this same agent). Additionally pushes to whoever
-    most recently talked to this entry's agent (see `person_notify.py`,
-    `DATA_LAST_USER_ID`) — every `notify.*` entity belonging to *their*
-    mobile_app devices, resolved fresh on every call rather than a fixed
-    target configured once at setup. A failure pushing is logged, not
-    fatal — the persistent notification already landed either way; so does
-    having no known user yet (nobody's talked to this agent since Home
-    Assistant last restarted) or a known user with no registered device —
-    both are normal, not errors.
-    """
-    message = data.get("message")
-    if not message or not isinstance(message, str):
-        return web.json_response(
-            {"error": '"message" (a non-empty string) is required'}, status=400
-        )
+async def async_notify_household(
+    hass: HomeAssistant, entry: ConfigEntry, message: str
+) -> None:
+    """Create a household notification (a fresh one each call —
+    `notification_id` left unset so Home Assistant generates a new one
+    rather than overwriting the last notification from this same agent).
+    Additionally pushes to whoever most recently talked to this entry's
+    agent (see `person_notify.py`, `DATA_LAST_USER_ID`) — every `notify.*`
+    entity belonging to *their* mobile_app devices, resolved fresh on
+    every call rather than a fixed target configured once at setup. A
+    failure pushing is logged, not fatal — the persistent notification
+    already landed either way; so does having no known user yet (nobody's
+    talked to this agent since Home Assistant last restarted) or a known
+    user with no registered device — both are normal, not errors.
 
+    The one guaranteed notify path in this integration — called both from
+    the agent's own `{"type": "notify", ...}` webhook request (below) and
+    directly from a fired watch (`watch.py`'s `_async_fire`), so a watch
+    notifies the household even if the agent, on receiving the watch's
+    message as a fresh instruction, doesn't itself decide to call this
+    webhook back (soft, LLM-judgment-dependent — this call is not).
+    """
     persistent_notification.async_create(hass, message, title=entry.title)
 
     last_user_id = hass.data.get(DOMAIN, {}).get(DATA_LAST_USER_ID, {}).get(
@@ -136,14 +136,27 @@ async def _handle_notify(
                     target={"entity_id": targets},
                     blocking=True,
                 )
-            except Exception as err:  # noqa: BLE001 - report, don't fail the webhook over it
+            except Exception as err:  # noqa: BLE001 - report, don't fail the caller over it
                 _LOGGER.warning(
-                    "ZeroClaw notify webhook: persistent notification created, "
+                    "ZeroClaw notify: persistent notification created, "
                     "but pushing to %s failed: %s",
                     targets,
                     err,
                 )
 
+
+async def _handle_notify(
+    hass: HomeAssistant, entry: ConfigEntry, data: dict
+) -> web.Response:
+    """`{"type": "notify", "message": "..."}` — validate and delegate to
+    `async_notify_household`."""
+    message = data.get("message")
+    if not message or not isinstance(message, str):
+        return web.json_response(
+            {"error": '"message" (a non-empty string) is required'}, status=400
+        )
+
+    await async_notify_household(hass, entry, message)
     return web.json_response({"status": "ok"})
 
 

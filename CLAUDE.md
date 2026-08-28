@@ -59,7 +59,19 @@ silently) when something similar happens again.
   on every turn), mapped to their `mobile_app` devices' `notify.*`
   entities. The other direction (HA → agent) is `conversation.py`'s
   `notify_agent` entity service, not a webhook — an automation's action,
-  not something the agent calls.
+  not something the agent calls. A watch firing notifies the household
+  directly (`webhook.async_notify_household`, called from `watch.py`'s
+  `_async_fire`) — not left up to the agent choosing to relay it; the
+  agent is separately, best-effort told too, for any follow-up action.
+- `sensor.py`: one entity per armed watch, grouped under its agent's
+  device (visibility into what's armed — see DECISIONS.md's watch-entity
+  entry). Entities are added/removed/updated via
+  `homeassistant.helpers.dispatcher` signals `WatchManager` sends
+  (`SIGNAL_WATCH_ADDED`/`_REMOVED`/`_UPDATED`, `const.py`), since watches
+  are created from an HTTP webhook request, not from this platform's own
+  setup — initial entities at startup come from `manager.list_for_entry`
+  directly instead (load order: `WatchManager.async_load()` runs before
+  platform setup, see `__init__.py`).
 
 ## Deployment
 

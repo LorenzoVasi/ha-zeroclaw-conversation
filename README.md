@@ -116,10 +116,22 @@ agent list — see below) gets taught, via its own `TOOLS.md`, how to:
   Assistant itself** — a physical switch, a Zigbee/Z-Wave device, another
   automation. A change made via the dashboard, or one the agent itself
   just made (e.g. because you asked it to over Assist), doesn't notify —
-  you already know, you just did it.
+  you already know, you just did it. When it fires, the household is
+  notified directly by this integration — not left up to the agent
+  deciding to relay it.
 - **Manage its own schedule** — ZeroClaw's own `cron_*` tools, unblocked by
   the add-on (see its own README/DOCS.md) so the agent can add/list/remove
   scheduled jobs without an approval prompt on every call.
+
+**Every armed watch shows up as its own entity** — `sensor.<agent> watch:
+<entity>`, grouped under the agent's own device in Home Assistant. State
+is `armed` for as long as it's watching; attributes show which entity/
+state it's waiting for, its message, whether it repeats, when it was
+created, and when it last triggered. A one-shot watch's entity disappears
+the moment it fires (check Logbook for exactly when); a recurring one
+stays and its `last_triggered` attribute updates each time. No need to ask
+the agent "what are you watching for me?" — Developer Tools → States (or
+any dashboard) answers it directly.
 
 This also registers a **`zeroclaw_conversation.notify_agent`** Home
 Assistant service, targeting a ZeroClaw conversation entity — the other

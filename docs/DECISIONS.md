@@ -1288,3 +1288,36 @@ four claw attempts and viewed it (catching failures 1–3 above), then
 checked the final crab design specifically at 64×64 to confirm it still
 reads correctly at realistic UI-icon scale, not just at the 256×256
 working resolution.
+
+## Replaced the hand-drawn icons with the real logos
+
+Immediate user follow-up (2026-08-28): the from-scratch crab/house
+drawing above wasn't wanted at all — "usa le icone originali di zeroclaw
+e homeassistant, non generartele te, cercale su internet e usa quelle."
+User supplied the exact two source URLs directly rather than leaving the
+search to this session: `https://images.icon-icons.com/2407/PNG/512/
+home_assistant_icon_146164.png` (Home Assistant's actual circuit-tree
+house mark, 512×512) and `https://zeroclaw.dev/assets/zeroclaw_icon.png`
+(ZeroClaw's own official claw icon, served from their own domain,
+1024×1024 — confirms it's their real first-party asset, not a
+fan-made rendering). Both fetched directly (the first needed a browser
+`User-Agent` header — a bare `curl` got Cloudflare's bot-challenge page
+instead of the image, silently returning HTML with a `.png` filename
+until the response was actually inspected).
+
+Recomposed all three assets from the real icons rather than the drawn
+ones, same layouts as before: `assets/ha-zeroclaw-conversation.png`
+(bidirectional-arrow README hero) and this repo's brand icon
+(`custom_components/zeroclaw_conversation/brand/icon.png`) — the latter
+redesigned as a layered composition (ZeroClaw's claw badge full-bleed,
+Home Assistant's badge as a smaller white-ringed corner badge) rather than
+the previous diagonal split, since the two real assets are already
+complete self-contained badges (their own background colors/shapes) and
+don't split cleanly into flat halves the way plain shape fills did. The
+companion `addon-zeroclaw` repo's `assets/ha-zeroclaw.png` (plain side by
+side, no arrow) was rebuilt the same way — see its own `docs/DECISIONS.md`.
+
+Checked visually again before shipping, same discipline as the drawn
+version: rendered and looked at all three compositions (side-by-side,
+bidirectional, and the layered brand icon) before saving them over the
+old files.

@@ -1527,3 +1527,53 @@ fixes together: recreate the watch, trigger it via an external device, and
 check that (a) a notification actually lands this time and (b) a
 `sensor.<agent>_watch_...` entity appears while armed and disappears (with
 a Logbook entry) the moment it fires.
+
+## Recognizing "when X, do Y" as a watch, and separating message from notification
+
+User follow-up (2026-08-28), two related refinements once the watch
+mechanism itself was actually working:
+
+**Trigger recognition was too narrow.** "Scusami quando spengo le luci in
+camera di Lorenzo potresti accendermi le luci scale?" got a description of
+what an automation *would* do, not an actual `create_watch` call — only
+rephrasing it explicitly as "creami un watch che..." worked. The existing
+`SOUL.md` bullet (see the earlier "conversational triggers" entry) was
+anchored on "tell me when X happens" specifically, which the user's actual
+phrasing never said — no "dimmi"/"tell me"/"avvisami" at all, just a bare
+"quando X, potresti Y?" conditional. Broadened the bullet (`en`/`it`) to
+key off the conditional itself — "quando"/"appena"/"when"/"as soon as"
+introducing a future condition — rather than any particular wording about
+being told, using the user's own failing example as the concrete
+illustration in the text.
+
+**`message` and `notification` were the same field, and shouldn't have
+been.** Once watches started actually notifying (previous entry),
+`_async_fire` used `watch.message` — the instruction meant for the
+agent's own follow-up action — as the literal notification text too. A
+watch created to "accendi luci scale" therefore sent the household a
+notification reading "accendi luci scale" verbatim: a bare command, not
+something a person would say to another person. Split it: `Watch` gained
+a `notification: str | None = None` field, `create_watch`'s wire format
+gained an optional `"notification"` alongside `"message"`, and
+`_async_fire` now notifies with `watch.notification or watch.message` —
+falls back to the old behavior if an agent omits the new field, rather
+than failing or notifying nothing. `TOOLS.md` (`en`/`it`) spells out the
+distinction with the user's own example pair: `message` can be the bare
+instruction ("accendi le luci delle scale"), `notification` should be a
+full sentence ("Si sono spente le luci in camera di Lorenzo, come
+richiesto accendo le luci delle scale"). `sensor.py`'s watch entities show
+both attributes (`message` and `notification`, the latter already
+resolved through the same fallback) for the same reason every other watch
+detail is visible there — so a mismatch between the two is checkable
+without needing to ask the agent.
+
+Verified: `py_compile` and `ruff check` clean across every changed file;
+the full 64-language sweep (same standalone script used for every
+`personality.py` change in this file) confirms every language still
+produces valid, correctly-substituted `TOOLS.md`/`SOUL.md` content with
+the new text and the added `{{"notification": ...}}` JSON-brace escaping
+included. Not verified end-to-end against a real conversation — whether
+the broadened trigger-recognition bullet actually gets the "quando X,
+potresti Y?" phrasing recognized this time is exactly the kind of thing
+only a live retest can confirm, same LLM-judgment caveat as every
+personality-file change in this project.

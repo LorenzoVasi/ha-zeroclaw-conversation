@@ -142,6 +142,7 @@ class ZeroClawWatchSensor(SensorEntity):
             "entity_id": self._watch.entity_id,
             "to_state": self._watch.to_state,
             "message": self._watch.message,
+            "notification": self._watch.notification or self._watch.message,
             "recurring": self._watch.recurring,
             "created_at": self._watch.created_at,
             "last_triggered": self._watch.last_triggered,

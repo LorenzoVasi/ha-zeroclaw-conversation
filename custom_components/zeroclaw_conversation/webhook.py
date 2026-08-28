@@ -210,14 +210,21 @@ async def _handle_create_watch(
     hass: HomeAssistant, entry: ConfigEntry, data: dict
 ) -> web.Response:
     """`{"type": "create_watch", "entity_id", "to_state", "message",
-    "recurring"?}` — arm a watch (see `watch.py`). `recurring` defaults to
-    `false`: a watch fires once and disarms itself unless the caller
-    explicitly asks to keep it armed.
+    "recurring"?, "notification"?}` — arm a watch (see `watch.py`).
+    `recurring` defaults to `false`: a watch fires once and disarms itself
+    unless the caller explicitly asks to keep it armed. `notification` is
+    optional and falls back to `message` when omitted — see `Watch.
+    notification`'s own docstring for why the two are separate fields at
+    all (the household's notification text and the agent's own action
+    instruction don't read the same way, and conflating them meant a
+    notification that was just the raw instruction verbatim, e.g. "accendi
+    luci scale" instead of a sentence a person would want to read).
     """
     entity_id = data.get("entity_id")
     to_state = data.get("to_state")
     message = data.get("message")
     recurring = bool(data.get("recurring", False))
+    notification = data.get("notification")
 
     if not entity_id or not isinstance(entity_id, str):
         return web.json_response(
@@ -235,12 +242,21 @@ async def _handle_create_watch(
         return web.json_response(
             {"error": '"message" (a non-empty string) is required'}, status=400
         )
+    if notification is not None and not isinstance(notification, str):
+        return web.json_response(
+            {"error": '"notification", if given, must be a string'}, status=400
+        )
 
     normalized_state = _normalize_state(to_state)
 
     manager = hass.data[DOMAIN][DATA_WATCH_MANAGER]
     watch_id = await manager.async_create(
-        entry.entry_id, entity_id, normalized_state, message, recurring
+        entry.entry_id,
+        entity_id,
+        normalized_state,
+        message,
+        recurring,
+        notification=notification or None,
     )
     return web.json_response(
         {"status": "ok", "watch_id": watch_id, "to_state": normalized_state}

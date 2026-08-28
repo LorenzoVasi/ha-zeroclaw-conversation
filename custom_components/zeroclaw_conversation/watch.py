@@ -81,6 +81,17 @@ class Watch:
     recurring: bool = False
     created_at: str = ""
     last_triggered: str | None = None
+    notification: str | None = None
+    """What the household is actually told (see `webhook.async_notify_
+    household`) — kept separate from `message` (what's sent to the agent
+    to act on) per explicit user request: the two serve different
+    audiences and don't read the same way. `message` might be a bare
+    instruction ("accendi le luci delle scale"); `notification` is meant
+    to be a natural sentence a person would want to read ("Si sono spente
+    le luci in camera di Lorenzo, accendo le luci delle scale come
+    richiesto"). Falls back to `message` when not given, so an agent that
+    forgets to set it separately still notifies something rather than
+    nothing."""
 
 
 class WatchManager:
@@ -162,7 +173,9 @@ class WatchManager:
         from .webhook import async_notify_household
 
         try:
-            await async_notify_household(self.hass, entry, watch.message)
+            await async_notify_household(
+                self.hass, entry, watch.notification or watch.message
+            )
         except Exception as err:  # noqa: BLE001 - a watch firing must not crash the event loop
             _LOGGER.warning(
                 "Watch '%s' on %s fired, but notifying the household failed: %s",
@@ -206,6 +219,7 @@ class WatchManager:
         to_state: str,
         message: str,
         recurring: bool,
+        notification: str | None = None,
     ) -> str:
         """Arm a new watch and persist it. Returns its `watch_id`."""
         watch_id = uuid.uuid4().hex
@@ -217,6 +231,7 @@ class WatchManager:
             message=message,
             recurring=recurring,
             created_at=dt_util.utcnow().isoformat(),
+            notification=notification,
         )
         self._watches[watch_id] = watch
         self._arm(watch)

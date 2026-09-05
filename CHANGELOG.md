@@ -6,6 +6,23 @@ Short version: `0.MINOR.PATCH`, MINOR when the intended behaviour
 changes or grows, PATCH when something that was already meant to work
 is made to work.
 
+## 0.2.2
+
+**Fixes the AI Task entity disappearing** — `AI Task entity
+ai_task.<name> not found` — which 0.2.1 caused on newer Home Assistant
+versions. Sorry: that was a regression I introduced with the previous
+fix, and it made the feature vanish rather than just misbehave.
+
+0.2.1 imported a Home Assistant dependency by a name that recent versions
+no longer use (it was renamed upstream). The import failed, so the whole
+AI Task platform failed to load and its entity stopped existing. It now
+works with either name, and — the part that actually matters — can no
+longer take the platform down: if that helper is missing entirely, the
+prompt is simply a little less precise instead of the entity being gone.
+
+If you were hit by this, updating and restarting is enough; the entity
+comes back with the same name, so anything pointing at it keeps working.
+
 ## 0.2.1
 
 **Fixes Home Assistant's built-in AI suggestions against ZeroClaw**,

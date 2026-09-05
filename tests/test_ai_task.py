@@ -18,6 +18,7 @@ from homeassistant.helpers.selector import NumberSelector, NumberSelectorConfig
 from custom_components.zeroclaw_conversation.ai_task import (
     _parse_structured_reply,
     _schema_for_prompt,
+    _to_openapi_converter,
 )
 
 
@@ -103,10 +104,120 @@ def test_schema_is_rendered_as_json_schema_not_a_python_repr():
 
 def test_schema_with_a_selector_is_serialized():
     """Home Assistant's own structures are full of selectors, which plain
-    `convert` cannot serialize — hence `llm.selector_serializer`. Without
+    conversion cannot serialize — hence `llm.selector_serializer`. Without
     it this raises rather than producing a schema."""
     schema = vol.Schema(
         {vol.Required("level"): NumberSelector(NumberSelectorConfig(min=0, max=10))}
     )
     parsed = json.loads(_schema_for_prompt(schema, _FakeChatLog()))
     assert "level" in parsed["properties"]
+
+
+# --- the converter lookup itself -------------------------------------
+#
+# Home Assistant renamed this dependency (`voluptuous_openapi` →
+# `probatio`). 0.2.1 imported the old name at module scope, which raised
+# on a newer instance and took the whole ai_task platform down with it —
+# the entity simply stopped existing. These pin the behaviour on every
+# combination, including "neither is installed", which no pinned test
+# harness can reproduce on its own.
+
+
+def _hide_modules(monkeypatch, *names: str) -> None:
+    """Make `import <name>` raise ImportError, as on an instance that
+    ships the other one."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name in names:
+            raise ImportError(f"simulated: no module named {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+
+def test_converter_found_under_the_current_name(monkeypatch):
+    """Current core: `probatio`. The harness doesn't ship it, so it's
+    injected — the point is the lookup order, not the library."""
+    import sys
+    import types
+
+    sentinel = object()
+    module = types.ModuleType("probatio")
+    module.to_openapi = sentinel
+    monkeypatch.setitem(sys.modules, "probatio", module)
+
+    assert _to_openapi_converter() is sentinel
+
+
+def test_converter_falls_back_to_the_older_name(monkeypatch):
+    """Core 2026.2.3 and earlier: `voluptuous_openapi`."""
+    _hide_modules(monkeypatch, "probatio")
+    converter = _to_openapi_converter()
+    assert converter is not None
+    assert converter.__module__.startswith("voluptuous_openapi")
+
+
+def test_neither_package_available_returns_none(monkeypatch):
+    _hide_modules(monkeypatch, "probatio", "voluptuous_openapi")
+    assert _to_openapi_converter() is None
+
+
+def test_prompt_still_built_when_no_converter_exists(monkeypatch):
+    """The regression that mattered: with no converter, describing the
+    schema must degrade, not raise — a worse prompt beats a platform that
+    won't load."""
+    _hide_modules(monkeypatch, "probatio", "voluptuous_openapi")
+    schema = vol.Schema({vol.Required("title"): str})
+
+    rendered = _schema_for_prompt(schema, _FakeChatLog())
+
+    assert isinstance(rendered, str)
+    assert "title" in rendered
+
+
+def test_a_converter_that_raises_does_not_fail_the_task(monkeypatch):
+    """Same guarantee for a converter that exists but chokes on the
+    schema."""
+    import sys
+    import types
+
+    module = types.ModuleType("probatio")
+
+    def _explode(*_args, **_kwargs):
+        raise TypeError("cannot serialize that")
+
+    module.to_openapi = _explode
+    monkeypatch.setitem(sys.modules, "probatio", module)
+
+    rendered = _schema_for_prompt(vol.Schema({vol.Required("a"): str}), _FakeChatLog())
+    assert isinstance(rendered, str)
+
+
+def test_module_imports_even_with_neither_package_installed(monkeypatch):
+    """The actual 0.2.1 failure, reproduced.
+
+    The old code imported `voluptuous_openapi` at module scope. On an
+    instance that ships `probatio` instead, that raised at import time,
+    so the `ai_task` platform never set up and Home Assistant reported
+    `AI Task entity ... not found` — the feature disappeared rather than
+    degrading. Re-importing the module with both names hidden is the
+    closest thing to that instance this pinned harness can produce.
+    """
+    import importlib
+    import sys
+
+    _hide_modules(monkeypatch, "probatio", "voluptuous_openapi")
+    name = "custom_components.zeroclaw_conversation.ai_task"
+    monkeypatch.delitem(sys.modules, name, raising=False)
+
+    module = importlib.import_module(name)
+
+    # And it is still usable, not merely importable.
+    assert module._to_openapi_converter() is None
+    assert isinstance(
+        module._schema_for_prompt(vol.Schema({vol.Required("a"): str}), _FakeChatLog()),
+        str,
+    )

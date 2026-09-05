@@ -33,7 +33,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.json import json_loads
-from voluptuous_openapi import convert
 
 from .api import ZeroClawError, async_call_webhook, webhook_secret_for
 from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DOMAIN
@@ -48,24 +47,72 @@ _CODE_FENCE = re.compile(
 )
 
 
+def _to_openapi_converter():
+    """The voluptuous → OpenAPI/JSON-Schema converter this Home Assistant
+    ships, or `None` if neither known name is importable.
+
+    Home Assistant renamed this dependency: `homeassistant/helpers/llm.py`
+    imported `convert` from `voluptuous_openapi` up to at least core
+    2026.2.3, and imports `to_openapi` from `probatio` on current core.
+    Neither name appears in core's own `requirements.txt`, so there is no
+    stable package to declare either — which is precisely why this is
+    resolved at call time and why failure is a `None`, not an exception.
+
+    Version 0.2.1 imported `voluptuous_openapi` at module scope and shipped
+    it after testing against a pinned harness that happened to still have
+    it. On a newer instance the import raised, the whole `ai_task`
+    platform failed to load, and the entity vanished — a nicety in a
+    prompt took down the feature it was meant to improve. Nothing optional
+    in this module gets to do that again.
+    """
+    try:
+        from probatio import to_openapi
+    except ImportError:
+        pass
+    else:
+        return to_openapi
+
+    try:
+        from voluptuous_openapi import convert
+    except ImportError:
+        return None
+    else:
+        return convert
+
+
 def _schema_for_prompt(
     structure: vol.Schema, chat_log: conversation.ChatLog
 ) -> str:
-    """Render `task.structure` as JSON Schema the model can actually read.
+    """Describe `task.structure` to the model as well as this instance allows.
 
-    `structure` is a `vol.Schema` object; interpolating it into a prompt
-    yields a Python repr, and for the schemas Home Assistant's own
-    features build — which are full of selectors — that repr is close to
-    meaningless. `voluptuous_openapi.convert` is what core's own LLM
-    integrations use for this, with `llm.selector_serializer` for exactly
-    the selector case (see `homeassistant/components/anthropic/entity.py`).
+    `structure` is a `vol.Schema`; interpolating it into a prompt yields a
+    Python repr, and for the selector-heavy schemas Home Assistant's own
+    features build that repr is close to meaningless — the model then
+    returns well-formed data of the wrong shape, which fails silently
+    rather than loudly. Converting to JSON Schema is what core's own LLM
+    integrations do, with `llm.selector_serializer` for the selector case.
+
+    Falls back to the repr if conversion isn't available or fails: a
+    worse prompt is a far better outcome than a broken platform.
     """
+    converter = _to_openapi_converter()
+    if converter is None:
+        return str(structure)
+
     serializer = (
         chat_log.llm_api.custom_serializer
         if chat_log.llm_api
         else llm.selector_serializer
     )
-    return json.dumps(convert(structure, custom_serializer=serializer))
+    try:
+        return json.dumps(converter(structure, custom_serializer=serializer))
+    except Exception:
+        _LOGGER.debug(
+            "Could not convert the task structure to JSON Schema; "
+            "describing it verbatim instead",
+            exc_info=True,
+        )
+        return str(structure)
 
 
 def _parse_structured_reply(reply_text: str) -> Any:

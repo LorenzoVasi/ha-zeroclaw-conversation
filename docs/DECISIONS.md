@@ -2088,3 +2088,52 @@ know the test is actually testing the fix.
 
 Ruff now also lints `tests/`, which it previously did not: a test suite
 nobody lints rots.
+
+## The 0.2.1 regression: verified against one version, shipped to another
+
+Reported within a day of releasing 0.2.1: `Impossibile eseguire l'azione:
+ai_task/generate_data — AI Task entity ai_task.zeroclaw_mario_zeroclaw_mario
+not found`. Before 0.2.1 that entity was being *called* (it got as far as
+failing to parse a reply); after 0.2.1 it did not exist.
+
+**Cause.** 0.2.1 added `from voluptuous_openapi import convert` at module
+scope, to render `task.structure` as JSON Schema. Home Assistant has
+since renamed that dependency: `homeassistant/helpers/llm.py` imports
+`convert` from `voluptuous_openapi` on core 2026.2.3, and `to_openapi`
+from `probatio` on current core. Neither name appears in core's own
+`requirements.txt`, so there was never a package to declare in
+`manifest.json` either. On an instance shipping `probatio`, the import
+raised, `ai_task` never set up, and the entity vanished.
+
+**Why the tests did not catch it.**
+`pytest-homeassistant-custom-component` lags core; the newest release
+pins 2026.2.3, which still had the old name. So the suite exercised the
+one arrangement where the code worked. This is the same mistake this file
+records repeatedly in a new costume — verifying against a single concrete
+version and treating the result as general — except this time the
+verification was automated, which made it feel more conclusive than it
+was. **Automated tests inherit the blind spots of whatever they run
+against.** A green suite says "correct on this version", never "correct".
+
+**Fix, and the rule taken from it.** The converter is now resolved
+lazily, tries both names, returns `None` if neither is importable, and
+`_schema_for_prompt` degrades to the plain repr rather than raising.
+Nothing optional in a platform module may be imported at module scope:
+the cost of an unavailable nicety must be a worse prompt, never a
+platform that will not load. The prompt-quality improvement was worth
+having; being able to take the entity down with it was not.
+
+**Regression tests, and they were checked for teeth.** Both package
+names, neither name, a converter that raises, and — the one that matters
+— re-importing the module with both names hidden, which is as close to
+the affected instance as a pinned harness gets. Restoring the module-level
+import makes that test fail with `ImportError: simulated: no module named
+voluptuous_openapi`; removing it turns the test green.
+
+**Known and deliberately not fixed here:** the entity id doubles the name
+(`ai_task.zeroclaw_mario_zeroclaw_mario`), because `_attr_has_entity_name`
+is set while the entity name and the device name are identical. It is
+cosmetic, and changing it would change the entity id — orphaning the
+stored AI Task preference for a household that has just had one entity
+disappear already. It belongs in a MINOR release with a migration note,
+not in the fix for the disappearance.

@@ -1895,3 +1895,78 @@ live Home Assistant UI — the usual gap for this repo, which has no
 source-confirmed and everything compiles and lints clean; the header
 contract itself (name, additive-to-bearer semantics, 401 on mismatch) was
 verified end-to-end against a real ZeroClaw container on the add-on side.
+
+## Automated tests: a hermetic suite, and a cross-repo one with a fake model
+
+User request (2026-09-05): "dei test automatici come potrei attuarli per
+entrambe le repo […] tipo un test automatico sovrapposto tra i 2 repo […]
+anche il deploy di homeassistant e un AI fake (che risponde in modo
+hardcodato)". The instinct was right, and it split cleanly into two
+layers that are worth keeping separate.
+
+**Layer 1 — hermetic (`pytest`, ~3s, no network, no containers).** Real
+Home Assistant core through `pytest-homeassistant-custom-component`.
+Covers what unit tests can actually catch, chosen by looking at what has
+genuinely broken here rather than by chasing coverage: `_normalize_state`
+(the `"spento"` watch that could never fire), the notify/watch webhook's
+validation and `to_state` normalization, `webhook_secret_for`'s
+precedence, personality rendering in `en`/`it`/a fallback language (a
+stray brace in `TOOLS.md` raises mid-config-flow), and the config flow
+including its `(host, agent)` uniqueness rule. 63 tests.
+
+Getting the harness running took three rounds of a dependency chase that
+is worth recording, because none of it is guessable: `conversation`
+imports `hassil`, whose version must match HA's own pin; `ai_task` pulls
+`camera`, which needs `PyTurboJPEG`; and the `homeassistant` base
+component has to be set up explicitly or `conversation` dies on
+`KeyError: 'homeassistant.exposed_entities'`. `requirements_test.txt`
+carries the pins and the one-liner that reads them back out of HA's own
+manifests when the harness is bumped. On Windows the harness cannot be
+installed at all without a C toolchain (`lru-dict`), so local runs go
+through a Linux container — which is also what CI does, so the two match.
+
+**Layer 2 — end-to-end across both repositories.** Real HA core → this
+integration → a real ZeroClaw daemon built from `addon-zeroclaw`'s own
+Dockerfile → `tests/e2e/fake_llm.py`. The fake is the whole trick: ZeroClaw's
+`custom` provider slot takes any OpenAI-compatible endpoint, so the one
+component that is non-deterministic, rate-limited and costs money gets
+swapped for a substring lookup table, and every other link stays
+genuine. Four tests: `/webhook` returns the canned reply (the contract
+`ai_task`/`notify_agent`/watch follow-ups depend on), `/ws/chat` resumes
+the same session across two connects (the thing the fictional
+`X-Session-Id` header silently broke), and two real Assist turns driven
+through `conversation.async_converse`.
+
+Both repositories run this same stack, each checking the other out —
+deliberately, rather than one triggering the other through
+`repository_dispatch`, which would need a PAT the household would have
+to create and rotate. Both repos are public, so `actions/checkout`
+suffices and there is no secret to manage.
+
+Three things fought back, all now encoded in `tests/e2e/conftest.py` and
+that directory's README:
+
+- The harness blocks sockets and pins them to localhost. The gateway's
+  host is added to pytest-socket's allowlist rather than switching the
+  guard off, so a stray call elsewhere still fails loudly.
+- The harness replaces `async_get_clientsession` with one that cannot
+  reach the network — nulled DNS resolver, different event loop. The
+  symptom is `'NoneType' object has no attribute 'getaddrinfo'`, which
+  points nowhere near mocking. A `real_client_session` fixture hands
+  `api.py` a genuine session on HA's own loop.
+- **Seeding a provider does not bind an agent to it.** The add-on writes
+  `[providers.models.custom.fake]`, but each agent carries its own
+  `model_provider` and the baked-in default points at
+  `openrouter.default`, so every turn failed with `LLM request failed`
+  until the agent was repointed. Not a bug — the config flow does this
+  binding in normal use — but it has to be done explicitly in `up.sh`,
+  and it only works through the live `PUT /api/config/prop` API, since
+  `zeroclaw config set` rejects `agents.<alias>.model_provider` as an
+  unknown property (the same dynamic-map-path limitation the add-on's
+  `run.sh` already works around for `mcp.servers`).
+
+Everything above was run locally before being pushed: 63 hermetic tests
+green, 4 e2e green against a stack built from scratch by `up.sh`, and the
+add-on's new boot assertions dry-run against a real container. Not
+verified: the workflows themselves on GitHub's runners — that only the
+first real CI run can show.

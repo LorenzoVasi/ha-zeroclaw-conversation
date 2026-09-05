@@ -1,0 +1,62 @@
+name: End-to-end
+
+# The cross-repo test: real Home Assistant core, this integration, and a
+# real ZeroClaw daemon built from the companion add-on repository, with
+# only the model faked (tests/e2e/fake_llm.py). See tests/e2e/README.md.
+#
+# The add-on repository runs this same stack from its own side, checking
+# *this* repository out instead — so a change to either half is tested
+# against the other, without either repo needing a token for the other.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # The pinned ZeroClaw image is the moving part this catches drifting:
+    # nothing here changes, and the test starts failing anyway.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out this integration
+        uses: actions/checkout@v4
+
+      - name: Check out the companion add-on
+        uses: actions/checkout@v4
+        with:
+          repository: LorenzoVasi/addon-zeroclaw
+          path: .addon-zeroclaw
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - run: pip install -r requirements_test.txt
+
+      - name: Bring up the stack (fake model + real ZeroClaw)
+        run: ADDON_REPO="${GITHUB_WORKSPACE}/.addon-zeroclaw" ./tests/e2e/up.sh
+
+      - name: Run the end-to-end suite
+        env:
+          ZEROCLAW_E2E_HOST: http://localhost:42617
+          ZEROCLAW_E2E_TOKEN: e2e-token
+        run: python -m pytest -m e2e -q
+
+      - name: ZeroClaw logs (always, for debugging a failure above)
+        if: always()
+        run: docker logs zc-e2e-gw || true
+
+      - name: Fake model logs
+        if: always()
+        run: docker logs fake-llm || true
+
+      - name: Tear down
+        if: always()
+        run: ./tests/e2e/down.sh || true

@@ -116,13 +116,31 @@ the way, including the mistakes and the dead ends, is logged in
 [`docs/DECISIONS.md`](docs/DECISIONS.md) for anyone curious how it
 actually came together.
 
+## Tests
+
+```bash
+pip install -r requirements_test.txt
+python -m pytest
+```
+
+That runs against real Home Assistant core (via
+`pytest-homeassistant-custom-component`) in a couple of seconds, with no
+network and no containers — the config flow, the notify/watch webhook,
+state normalization, personality rendering.
+
+There's also an end-to-end suite that goes all the way through: real Home
+Assistant, this integration, a real ZeroClaw daemon built from the
+add-on's own Dockerfile, and a fake model that answers from a lookup
+table so the whole thing stays deterministic and free. It's excluded from
+the default run; see [`tests/e2e/README.md`](tests/e2e/README.md).
+
 ## Status / known gaps
 
-Still young: some corners (a few of the Home Assistant APIs this leans on,
-watches surviving a restart) have been checked carefully against real
-source but not yet fully exercised on a live, long-running instance. No
-automated test suite yet either. Nothing that should stop you from trying
-it — just worth knowing before you lean on it for something critical.
+Still young: some corners (watches surviving a restart, the notify
+webhook against a long-running instance) have been checked against real
+source and exercised in tests, but not yet lived with for months.
+Nothing that should stop you from trying it — just worth knowing before
+you lean on it for something critical.
 
 ## License
 

@@ -1,0 +1,21 @@
+# Pinned so CI and a local run exercise the same Home Assistant core.
+#
+# `pytest-homeassistant-custom-component` brings HA core plus its test
+# harness. The rest are runtime requirements of components this
+# integration pulls in transitively (`conversation`, `ai_task`, and
+# `ai_task`'s own after-dependency on `camera`). Home Assistant installs
+# those itself at runtime; the test harness does not, so
+# `async_setup_component` fails on an import error without them.
+#
+# To refresh after bumping the harness, read the pins out of HA's own
+# manifests rather than guessing a version:
+#   python - <<'PY'
+#   import json, pathlib, homeassistant
+#   root = pathlib.Path(homeassistant.__file__).parent / "components"
+#   for c in ("conversation", "camera"):
+#       print(c, json.loads((root / c / "manifest.json").read_text()).get("requirements"))
+#   PY
+pytest-homeassistant-custom-component==0.13.316
+hassil==3.5.0
+home-assistant-intents==2026.1.28
+PyTurboJPEG==1.8.0

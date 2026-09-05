@@ -23,7 +23,6 @@ from homeassistant.setup import async_setup_component
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Make the custom component loadable in every test."""
-    return
 
 
 @pytest.fixture(autouse=True)

@@ -29,7 +29,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/ruff-action@v3
         with:
-          src: "custom_components"
+          # The test suite is linted too — an unlinted suite rots.
+          src: "custom_components tests"
 
   # The hermetic suite: real Home Assistant core (via
   # pytest-homeassistant-custom-component), no network, no containers.

@@ -20,15 +20,11 @@ from custom_components.zeroclaw_conversation.personality import (
 # "- **Label:** value" lines in place, so the fixture has to carry them
 # for that path to be exercised at all — a bare heading would silently
 # pass through unchanged and prove nothing.
-IDENTITY_TEMPLATE = "\n".join(
-    [
-        "# IDENTITY.md",
-        "",
-        "- **Name:** Assistant",
-        "- **vibe:** helpful",
-        "- **Emoji:** 🤖",
-    ]
-)
+IDENTITY_TEMPLATE = """# IDENTITY.md
+
+- **Name:** Assistant
+- **vibe:** helpful
+- **Emoji:** 🤖"""
 
 TEMPLATES = [
     {"filename": "SOUL.md", "content": "# base soul"},

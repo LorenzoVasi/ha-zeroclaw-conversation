@@ -28,7 +28,6 @@ def enable_sockets(socket_enabled):
     if host:
         allowed.append(host)
     pytest_socket.socket_allow_hosts(allowed, allow_unix_socket=True)
-    return
 
 
 @pytest.fixture

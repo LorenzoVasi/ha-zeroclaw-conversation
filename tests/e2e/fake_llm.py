@@ -32,6 +32,19 @@ MODEL_ID = "fake-model"
 # Substring (lowercased) -> canned reply. First match wins, so put the
 # more specific phrases first.
 RESPONSES: list[tuple[str, str]] = [
+    # Structured `ai_task` requests, answered the way a chatty household
+    # agent really answers them: correct JSON, wrapped in prose and a
+    # markdown code fence. This is the shape that broke Home Assistant's
+    # built-in AI suggestions against a live instance, so the e2e suite
+    # reproduces it rather than assuming the model behaves.
+    (
+        "automated data request",
+        (
+            'Certo! Ecco i suggerimenti:\n\n```json\n'
+            '{"suggestions": ["Spegni le luci del corridoio"]}\n```\n\n'
+            "Fammi sapere."
+        ),
+    ),
     ("ping", "pong"),
     ("lavatrice", "La lavatrice ha finito, avvio l'asciugatrice."),
     ("chi sei", "Sono l'assistente di casa."),
@@ -154,7 +167,7 @@ def build_app() -> web.Application:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="0.0.0.0")  # noqa: S104 - test fixture
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8081)
     args = parser.parse_args()
     web.run_app(build_app(), host=args.host, port=args.port)

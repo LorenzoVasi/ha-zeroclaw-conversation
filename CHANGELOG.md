@@ -2,8 +2,28 @@
 
 Versioning rules for this repository are in
 [`docs/DECISIONS.md`](docs/DECISIONS.md) ("Versioning and releases").
-Short version: `0.MINOR.PATCH`, MINOR for anything you'd want to know
-about before updating, PATCH for fixes that change nothing you can see.
+Short version: `0.MINOR.PATCH`, MINOR when the intended behaviour
+changes or grows, PATCH when something that was already meant to work
+is made to work.
+
+## 0.2.1
+
+**Fixes Home Assistant's built-in AI suggestions against ZeroClaw**,
+which failed with `did not return valid JSON for this structured task:
+unexpected character: line 1 column 1 (char 0)`.
+
+Two causes, both fixed:
+
+- The wanted shape was being described to the model as a raw Python
+  object rather than as a JSON schema, so it often had no real idea what
+  to produce.
+- A reply that *was* correct JSON but came wrapped in a code fence or a
+  polite sentence — which is exactly what a warm, chatty household agent
+  tends to produce — was rejected outright. Those are now unwrapped.
+  A reply with no JSON in it at all still fails, rather than guessing.
+
+When it does fail now, the error names what the agent actually replied
+instead of only where the parser gave up.
 
 ## 0.2.0
 

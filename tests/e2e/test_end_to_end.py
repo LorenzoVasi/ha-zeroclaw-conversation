@@ -23,7 +23,8 @@ import uuid
 
 import aiohttp
 import pytest
-from homeassistant.components import conversation
+import voluptuous as vol
+from homeassistant.components import ai_task, conversation
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
@@ -162,3 +163,36 @@ async def test_assist_reply_reflects_the_prompt(
     )
 
     assert "asciugatrice" in result.response.speech["plain"]["speech"]
+
+
+async def test_structured_ai_task_survives_a_chatty_reply(
+    hass: HomeAssistant, real_client_session
+):
+    """The failure Home Assistant's built-in AI suggestions hit on a real
+    instance: the model answered with correct JSON wrapped in prose and a
+    markdown code fence, and the whole task failed with "unexpected
+    character: line 1 column 1 (char 0)".
+
+    The fake model deliberately replies in exactly that shape, so this
+    covers the real path — schema rendered into the prompt, agent turn,
+    reply parsed — rather than the parser alone.
+    """
+    await _setup_agent_entity(hass)
+    assert await async_setup_component(hass, "ai_task", {})
+
+    registry = er.async_get(hass)
+    entity_id = next(
+        e.entity_id
+        for e in registry.entities.values()
+        if e.domain == "ai_task" and e.platform == DOMAIN
+    )
+
+    result = await ai_task.async_generate_data(
+        hass,
+        task_name="e2e suggestions",
+        entity_id=entity_id,
+        instructions="This is an automated data request: suggest one thing to do.",
+        structure=vol.Schema({vol.Required("suggestions"): [str]}),
+    )
+
+    assert result.data == {"suggestions": ["Spegni le luci del corridoio"]}

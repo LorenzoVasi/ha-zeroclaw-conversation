@@ -2017,3 +2017,74 @@ the range, rather than backdated intermediate tags that never
 corresponded to anything installable. The `0.1.0` entry in
 `CHANGELOG.md` is explicitly marked as backfilled for the same reason —
 that release exists, the changelog describing it did not.
+
+### Correction to the MINOR/PATCH wording, on first contact with a real case
+
+The rule above originally read "PATCH: a fix that changes nothing they
+can observe." Version 0.2.1 — the `ai_task` structured-output fix — broke
+that immediately: it is unambiguously a fix, and it is also very much
+observable, because a feature that failed outright now works.
+
+Sharpened, and this is the wording that applies from here on:
+
+- **MINOR** — the intended behaviour changes or grows: a new option, a
+  changed default, a dependency bump users should know about.
+- **PATCH** — something that was already meant to work is made to work.
+  Observable is fine and expected; what makes it a PATCH is that the
+  promise was already made.
+
+Recorded rather than quietly rewritten because the original phrasing was
+a real (small) misjudgement, and a rule that gets silently edited every
+time it is inconvenient is not a rule.
+
+## `ai_task` structured output: JSON that wasn't, and a schema that wasn't
+
+User report (2026-09-05), from Home Assistant's built-in AI suggestions:
+`Impossibile eseguire l'azione: ai_task/generate_data — ZeroClaw did not
+return valid JSON for this structured task: unexpected character: line 1
+column 1 (char 0)`.
+
+Two independent causes, and only the first is the obvious one.
+
+**The reply wasn't bare JSON.** `_async_generate_data` fed the agent's
+text straight to `json_loads`. The agent on the other end is this
+household's own assistant, whose personality files tell it to be warm, to
+confirm what it did, and to answer in Italian — so a request for raw JSON
+comes back as `Certo! Ecco i suggerimenti:` followed by a ```json fence.
+Position 0 being "unexpected" is that opening backtick (or a BOM). Now
+handled: BOM stripped, code fence unwrapped, and as a last resort the
+outermost `{…}`/`[…]` span extracted. Deliberately *not* a balanced-brace
+parser — the span is enough for the realistic shapes, and anything it
+gets wrong still fails the parse rather than returning something
+plausible but wrong. A reply with no JSON in it at all still raises.
+
+**The request never described the schema properly.** `task.structure` is
+a `vol.Schema` object, and it was being interpolated into the prompt with
+an f-string — so the model received a Python repr, which for the
+selector-heavy schemas Home Assistant's own features build is close to
+meaningless. Core's LLM integrations convert with
+`voluptuous_openapi.convert`, passing `llm.selector_serializer` for
+exactly the selector case (`homeassistant/components/anthropic/entity.py`
+was the reference). Now rendered as real JSON Schema. This one would
+never have surfaced as an error — it would just have produced
+plausible-looking data of the wrong shape, which is worse.
+
+Also: the prompt now says plainly that this is an automated request and
+not a conversation, which does more than repeating "only JSON" louder to
+an agent whose entire `SOUL.md` pushes the other way; and the error
+raised to the UI now quotes what the agent actually replied, so the next
+occurrence is diagnosable from the notification instead of the log.
+
+**Verified, including that the regression test has teeth.** 15 unit
+tests over the realistic malformed shapes (fences, prose either side,
+BOM, top-level array, selector schemas), plus an end-to-end test in which
+the fake model deliberately answers with fenced JSON wrapped in prose and
+a real `ai_task.generate_data` runs through real Home Assistant, this
+integration and a real ZeroClaw. Reverting the parser to the old
+`json_loads` makes that e2e test reproduce the reported error verbatim —
+`orjson.JSONDecodeError: unexpected character: line 1 column 1 (char 0)`
+— and restoring it turns the test green again, which is the only way to
+know the test is actually testing the fix.
+
+Ruff now also lints `tests/`, which it previously did not: a test suite
+nobody lints rots.

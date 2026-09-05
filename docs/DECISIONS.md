@@ -1970,3 +1970,50 @@ green, 4 e2e green against a stack built from scratch by `up.sh`, and the
 add-on's new boot assertions dry-run against a real container. Not
 verified: the workflows themselves on GitHub's runners — that only the
 first real CI run can show.
+
+## Versioning and releases
+
+Adopted 2026-09-05, on request. The companion `addon-zeroclaw` repo
+carries the same policy in its own `docs/DECISIONS.md`; this entry
+records the parts that differ because distribution here is HACS rather
+than Supervisor.
+
+**The two repositories version independently** — separate installs,
+separate distribution mechanisms, and nobody updates both at the same
+instant. A household can legitimately run integration 0.2.0 against
+add-on 0.3.0.
+
+**So: when a release only works if the add-on is also updated, this
+changelog says so, naming the minimum add-on version.** The
+`webhook_secret` in 0.2.0 is the first such case — configured on one
+side alone, it silently 401s the other's `/webhook` calls (`ai_task`,
+`notify_agent`, watch follow-ups), while leaving Assist working, which
+makes it exactly the kind of thing that has to be stated rather than
+discovered.
+
+**`0.MINOR.PATCH`.** MINOR for anything worth knowing before updating,
+PATCH for invisible fixes. No 1.0 until the READMEs stop carrying "not
+yet lived with for months" caveats.
+
+**Two places must agree, and HACS will not tell you if they don't:**
+`manifest.json`'s `version` and the GitHub Release's tag. HACS takes the
+*release tag* as the version it offers users, while Home Assistant reads
+the manifest — so a mismatch means the two disagree about what's
+installed, quietly. Release checklist:
+
+1. CI green on `main`, including the cross-repo end-to-end job.
+2. Bump `manifest.json`.
+3. Write the `CHANGELOG.md` entry.
+4. Commit, then annotated tag `v<version>`.
+5. `gh release create v<version>` with notes matching the changelog.
+
+A GitHub Release is not optional here the way it is for the add-on:
+HACS requires at least one, and uses the newest as the installable
+version.
+
+**History is not reconstructed.** Work already merged to `main` without
+a tag is covered by the next real release as one honest entry spanning
+the range, rather than backdated intermediate tags that never
+corresponded to anything installable. The `0.1.0` entry in
+`CHANGELOG.md` is explicitly marked as backfilled for the same reason —
+that release exists, the changelog describing it did not.

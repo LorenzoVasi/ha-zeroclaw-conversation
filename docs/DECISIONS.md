@@ -2137,3 +2137,58 @@ cosmetic, and changing it would change the entity id — orphaning the
 stored AI Task preference for a household that has just had one entity
 disappear already. It belongs in a MINOR release with a migration note,
 not in the fix for the disappearance.
+
+## Image generation: not implemented, and why (decided 2026-09-06)
+
+Asked for: Home Assistant's "Attività di generazione immagine" — the
+`ai_task` `GENERATE_IMAGE` feature, as used by AI Suggestions. Decision,
+by the household: **don't implement it; wait for ZeroClaw.** The research
+is recorded here so it doesn't have to be redone, and because the
+question will come back.
+
+**Home Assistant's side of the contract is not negotiable.**
+`GenImageTaskResult` requires `image_data: bytes` plus a `mime_type`
+(`homeassistant/components/ai_task/task.py`). There is no variant that
+accepts a URL, a description, or text — the entity must return the actual
+image.
+
+**ZeroClaw cannot produce one.** Checked against v0.8.5 source, not the
+older claim in this file's own `ai_task.py` docstring:
+
+- `crates/zeroclaw-api/src/model_provider.rs` — the `ModelProvider` trait
+  exposes `chat`, `stream_chat`, `list_models`, `list_models_with_pricing`
+  and friends. Nothing that returns an image.
+- No image-generation route on the gateway. The image work in the 0.8.5
+  changelog ("image upload plus dashboard attach/drop UI through a
+  bounded gateway endpoint", #10544) is *input* — vision — not output.
+- The only image generation anywhere in the repo is hardcoded inside the
+  LinkedIn tool (`crates/zeroclaw-tools/src/linkedin_client.rs` posts to
+  `https://api.openai.com/v1/images/generations`), tied to that feature
+  and not exposed as a general capability. A `generate_image` string in
+  `skill_tool.rs` is a unit-test fixture for a hypothetical MCP tool, not
+  a real one.
+
+**Borrowing ZeroClaw's existing credentials is also out.** Reading
+`providers.models.<type>.<alias>.api_key` back through
+`GET /api/config/prop` returns `{"populated": true}` with no value —
+the same masking confirmed earlier for `gateway.paired_tokens` and
+`gateway.webhook_secret`. Secrets go in and do not come out, which is
+correct of ZeroClaw and fatal to that idea.
+
+**So the only implementable design was: the integration generates the
+image itself**, holding its own OpenAI-compatible image endpoint, key and
+model. Workable, and it was offered as an opt-in that would only advertise
+`GENERATE_IMAGE` once configured — but it inverts the arrangement this
+whole project rests on, where ZeroClaw owns model configuration and this
+integration owns none. It would also have needed a *second* provider in
+practice, since this household's agent runs on Anthropic, which has no
+image API at all. Declined on those grounds, not on effort.
+
+**What to re-check when revisiting** (should be a few minutes, not an
+afternoon): does `ModelProvider` in `zeroclaw-api` gain an image method,
+or the gateway an image route? If either appears, this becomes a normal
+delegation like every other capability here, with no credentials on this
+side — which is the version worth having.
+
+Meanwhile `ai_task.py` continues to declare `GENERATE_DATA` only. That
+is not an oversight and the docstring now says so with the evidence.

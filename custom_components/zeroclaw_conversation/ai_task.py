@@ -180,8 +180,17 @@ class ZeroClawAITaskEntity(ai_task.AITaskEntity):
     - No SUPPORT_ATTACHMENTS — `/webhook` takes `{"message": "<text>"}`,
       there's no file-upload mechanism to hand attachments to ZeroClaw
       through this endpoint.
-    - No GENERATE_IMAGE — ZeroClaw has no dedicated image-generation
-      endpoint exposed through the gateway.
+    - No GENERATE_IMAGE — ZeroClaw cannot generate images, re-confirmed
+      against v0.8.5 rather than carried over on trust: `ModelProvider`
+      (`zeroclaw-api`) exposes only chat/stream/model-listing methods,
+      the gateway has no image route, and the sole image generation in
+      the repo is hardcoded inside the LinkedIn tool. Home Assistant
+      requires real bytes (`GenImageTaskResult.image_data`), so there is
+      nothing to delegate. Implementing it would mean this integration
+      holding its own image-provider credentials, which was offered and
+      deliberately declined — see docs/DECISIONS.md, "Image generation:
+      not implemented, and why", including what to re-check if ZeroClaw
+      ever grows the capability.
     - Structured (`task.structure`) output is best-effort only: the schema
       is described in the prompt text and the reply is parsed as JSON,
       since `/webhook` has no native JSON-schema-constrained decoding.

@@ -29,7 +29,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.json import json_loads
 
-from .api import ZeroClawError, async_call_webhook
+from .api import ZeroClawError, async_call_webhook, webhook_secret_for
 from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -105,6 +105,7 @@ class ZeroClawAITaskEntity(ai_task.AITaskEntity):
                 prompt,
                 chat_log.conversation_id,
                 agent=self._agent,
+                webhook_secret=webhook_secret_for(self._entry),
             )
         except ZeroClawError as err:
             _LOGGER.warning("ZeroClaw AI Task call failed: %s", err)

@@ -53,7 +53,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .api import ZeroClawError, async_call_webhook
+from .api import ZeroClawError, async_call_webhook, webhook_secret_for
 from .const import (
     CONF_AGENT,
     CONF_API_TOKEN,
@@ -192,6 +192,7 @@ class WatchManager:
                 watch.message,
                 uuid.uuid4().hex,
                 agent=entry.data.get(CONF_AGENT) or "",
+                webhook_secret=webhook_secret_for(entry),
             )
         except ZeroClawError as err:
             _LOGGER.warning(

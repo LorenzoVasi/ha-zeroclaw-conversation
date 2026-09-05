@@ -31,7 +31,13 @@ from typing import Any
 import aiohttp
 import voluptuous as vol
 from homeassistant.components import webhook
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -50,6 +56,7 @@ from .const import (
     CONF_HA_URL,
     CONF_HOST,
     CONF_WEBHOOK_ID,
+    CONF_WEBHOOK_SECRET,
     DEFAULT_HA_URL,
     DEFAULT_TIMEOUT,
     DOMAIN,
@@ -91,6 +98,13 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
         vol.Optional(CONF_API_TOKEN, default=""): str,
+        # Optional second factor on `/webhook` only, matching the add-on's
+        # own `webhook_secret` option (ZeroClaw 0.8.5+). Leave blank unless
+        # the gateway has one configured — see `CONF_WEBHOOK_SECRET` in
+        # const.py for what breaks if the two sides disagree. Editable
+        # afterwards through this integration's options flow, so an
+        # existing install can adopt it without being re-added.
+        vol.Optional(CONF_WEBHOOK_SECRET, default=""): str,
         # Enables the agent proactively notifying/watching (see
         # docs/DECISIONS.md, "Scheduling and event-driven triggers"): leave
         # blank to skip teaching the agent a notify-webhook URL entirely,
@@ -150,9 +164,19 @@ class ZeroClawConversationConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> ZeroClawOptionsFlow:
+        """Expose the options flow (below) so an already-configured entry
+        can be given a webhook secret — or have one cleared — without
+        being removed and re-added, which would lose its agent selection
+        and its registered notify-webhook ID."""
+        return ZeroClawOptionsFlow()
+
     def __init__(self) -> None:
         self._host: str = ""
         self._token: str = ""
+        self._webhook_secret: str = ""
         self._ha_url: str = ""
         self._webhook_id: str = ""
         self._new_agent_display_name: str = ""
@@ -186,6 +210,7 @@ class ZeroClawConversationConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 self._host = host
                 self._token = user_input.get(CONF_API_TOKEN, "")
+                self._webhook_secret = user_input.get(CONF_WEBHOOK_SECRET, "")
                 self._ha_url = user_input.get(CONF_HA_URL, "").rstrip("/")
                 if self._ha_url:
                     self._webhook_id = webhook.async_generate_id()
@@ -399,8 +424,49 @@ class ZeroClawConversationConfigFlow(ConfigFlow, domain=DOMAIN):
             data={
                 CONF_HOST: self._host,
                 CONF_API_TOKEN: self._token,
+                CONF_WEBHOOK_SECRET: self._webhook_secret,
                 CONF_AGENT: agent,
                 CONF_HA_URL: self._ha_url,
                 CONF_WEBHOOK_ID: self._webhook_id,
             },
+        )
+
+
+class ZeroClawOptionsFlow(OptionsFlow):
+    """Edit the settings that can legitimately change on a live entry.
+
+    Only the webhook secret for now, and deliberately so: host and agent
+    are this entry's identity (`_async_abort_entries_match` keys on
+    `(host, agent)`), and the notify-webhook ID must stay stable because
+    it's already baked into whatever `TOOLS.md` the agent was taught. The
+    webhook secret is the one value an operator genuinely has to be able
+    to rotate — the add-on side can change it at any time, and without
+    this the only way to follow suit would be removing and re-adding the
+    integration.
+
+    Written to `entry.options`, which `api.webhook_secret_for()` reads in
+    preference to `entry.data`; `__init__.py` reloads the entry on change
+    so the new value is picked up without a Home Assistant restart.
+    """
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(
+                data=self.config_entry.options | user_input
+            )
+
+        current = self.config_entry.options.get(
+            CONF_WEBHOOK_SECRET,
+            self.config_entry.data.get(CONF_WEBHOOK_SECRET, ""),
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_WEBHOOK_SECRET, default=current): str,
+                }
+            ),
         )

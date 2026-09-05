@@ -7,9 +7,11 @@
         "data": {
           "host": "ZeroClaw gateway URL",
           "api_token": "API token",
+          "webhook_secret": "Webhook secret (optional)",
           "ha_url": "Home Assistant URL (as reachable from the ZeroClaw container)"
         },
         "data_description": {
+          "webhook_secret": "Only if you set a \"webhook_secret\" in the zeroclaw add-on's Configuration tab — it has to match exactly. Leave blank otherwise. It adds a second check on top of the API token for AI Tasks, the notify_agent service and watch follow-ups; Assist itself is unaffected either way.",
           "ha_url": "Lets the agent proactively notify you (pushed to whoever last talked to it, via their own linked Home Assistant devices) and watch for events (e.g. \"tell me when the washing machine finishes\"). Leave blank to skip this feature."
         }
       },
@@ -37,6 +39,20 @@
     "abort": {
       "already_configured": "This ZeroClaw gateway is already configured.",
       "no_providers_configured": "No model providers are configured on ZeroClaw yet. Add one in the zeroclaw add-on's Configuration tab (its \"providers\" option), or directly in ZeroClaw's own dashboard, then try again."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ZeroClaw options",
+        "description": "Change the webhook secret without removing and re-adding the integration — useful after rotating it in the zeroclaw add-on.",
+        "data": {
+          "webhook_secret": "Webhook secret (optional)"
+        },
+        "data_description": {
+          "webhook_secret": "Must match the zeroclaw add-on's own \"webhook_secret\" option exactly. Leave blank if the add-on has none set."
+        }
+      }
     }
   },
   "services": {

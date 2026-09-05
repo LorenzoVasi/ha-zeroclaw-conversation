@@ -13,11 +13,37 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DEFAULT_TIMEOUT
+from .const import CONF_WEBHOOK_SECRET, DEFAULT_TIMEOUT
 
 
 class ZeroClawError(Exception):
     """Raised when a call to ZeroClaw's gateway fails or errors out."""
+
+
+def webhook_secret_for(entry) -> str | None:
+    """This entry's effective `X-Webhook-Secret` value, or `None` when it
+    has none configured (the default, and the case for every entry created
+    before the field existed — see `CONF_WEBHOOK_SECRET` in const.py).
+
+    An options-flow edit wins over the value captured at setup time, so an
+    existing install can start sending the header without being torn down
+    and re-added. An empty string is treated as "not configured" rather
+    than as a secret that happens to be empty, so clearing the field in
+    the options flow genuinely turns the header back off.
+
+    Presence in `options` — not truthiness — is what decides which source
+    wins, and that distinction is load-bearing: a plain
+    `options.get(...) or data.get(...)` silently falls back to the
+    setup-time value when the operator *clears* the field, so removing a
+    secret would leave this still sending the stale one and 401-ing on
+    every `/webhook` call while the UI showed an empty field. Caught by
+    the precedence tests, not by review.
+    """
+    if CONF_WEBHOOK_SECRET in entry.options:
+        value = entry.options[CONF_WEBHOOK_SECRET]
+    else:
+        value = entry.data.get(CONF_WEBHOOK_SECRET)
+    return value or None
 
 
 async def async_call_webhook(
@@ -27,6 +53,7 @@ async def async_call_webhook(
     message: str,
     session_id: str,
     agent: str | None = None,
+    webhook_secret: str | None = None,
 ) -> str:
     """POST one message to ZeroClaw's `/webhook` and return the reply text.
 
@@ -51,10 +78,20 @@ async def async_call_webhook(
     `async_call_ws_chat` for anything that needs multi-turn continuity; this
     function is for one-shot calls only (`ai_task`'s `generate_data`, which
     is stateless by design).
+
+    `webhook_secret`, when given, is sent as `X-Webhook-Secret` *in
+    addition to* the bearer token — ZeroClaw's `gateway.webhook_secret`
+    (0.8.5+) is a second factor on this endpoint, not an alternative to
+    pairing: with both configured the gateway requires both, and rejects
+    the call with 401 if either is missing or wrong. Left unset, no header
+    is sent, which is correct whenever the gateway has no secret
+    configured. Use `webhook_secret_for(entry)` to resolve it.
     """
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if webhook_secret:
+        headers["X-Webhook-Secret"] = webhook_secret
     params = {"agent": agent} if agent else None
 
     session = async_get_clientsession(hass)

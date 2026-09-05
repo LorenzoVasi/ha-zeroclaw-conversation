@@ -32,7 +32,12 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_platform, intent
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .api import ZeroClawError, async_call_webhook, async_call_ws_chat
+from .api import (
+    ZeroClawError,
+    async_call_webhook,
+    async_call_ws_chat,
+    webhook_secret_for,
+)
 from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
 from .person_notify import async_resolve_person_name
 from .session_cleanup import async_setup_cleanup
@@ -234,6 +239,7 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
                 message,
                 uuid.uuid4().hex,
                 agent=self._agent,
+                webhook_secret=webhook_secret_for(self._entry),
             )
         except ZeroClawError as err:
             _LOGGER.warning("notify_agent service call failed: %s", err)

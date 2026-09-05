@@ -39,8 +39,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         domain_data[DATA_WATCH_MANAGER] = manager
 
     await async_register_webhook(hass, entry)
+    # The webhook secret is read at call time (`api.webhook_secret_for`),
+    # but the entity objects doing the calling are built once here at
+    # setup — so an options-flow edit only takes effect after a reload.
+    # Doing that automatically rather than making the user restart Home
+    # Assistant after rotating the secret.
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload this entry when its options change (see `async_setup_entry`)."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

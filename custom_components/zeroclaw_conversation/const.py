@@ -3,13 +3,29 @@
 DOMAIN = "zeroclaw_conversation"
 
 CONF_HOST = "host"
-# ZeroClaw 0.8.4 has no generic webhook-secret header (that only exists on
-# ZeroClaw's unreleased `master` branch). Auth here is a bearer token
-# checked against ZeroClaw's `gateway.paired_tokens` (pairing enforced via
+# Auth for every surface this integration calls (`/webhook`, `/ws/chat`,
+# `/api/*`): a bearer token checked against ZeroClaw's
+# `gateway.paired_tokens` (pairing enforced via
 # `gateway.require_pairing = true`) — the same token the companion
-# `zeroclaw` add-on's `api_token` option provisions. See
-# docs/DECISIONS.md for how this was confirmed against a running gateway.
+# `zeroclaw` add-on's `api_token` option provisions. See docs/DECISIONS.md
+# for how this was confirmed against a running gateway.
 CONF_API_TOKEN = "api_token"
+
+# Optional *second* factor, and only on `POST /webhook` — sent as an
+# `X-Webhook-Secret` header alongside (never instead of) the bearer above,
+# matching ZeroClaw's `gateway.webhook_secret`, which landed in 0.8.5 and
+# genuinely did not exist in 0.8.4. Deliberately narrow: ZeroClaw applies
+# it to `/webhook` and `/sop/*` only, so `/ws/chat` (every Assist turn) and
+# `/api/*` (this integration's whole config flow) are unaffected by it.
+#
+# Blank/absent — including on every config entry created before this
+# existed — means no header is sent, which is exactly right when the
+# gateway has no secret configured either. The two sides must agree: if
+# the add-on sets one and this doesn't (or they differ), `/webhook` calls
+# fail with 401, which affects `ai_task`, the `notify_agent` service, and
+# a fired watch's follow-up message — but not Assist itself. See
+# docs/DECISIONS.md.
+CONF_WEBHOOK_SECRET = "webhook_secret"
 
 # ZeroClaw's `/webhook` picks an agent on its own when no `?agent=` query
 # param is given: the migration-synthesized "default" agent, or else

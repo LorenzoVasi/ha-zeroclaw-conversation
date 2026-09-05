@@ -1838,3 +1838,60 @@ explicit about the boundary than rely on it inferring "don't log
 commands" on its own.
 
 Verified: `personality.py` compiles and lints clean.
+
+## Optional `X-Webhook-Secret` on `/webhook`, and an options flow to rotate it
+
+Companion to the `addon-zeroclaw` change of the same session (see that
+repo's `docs/DECISIONS.md`, "`gateway.webhook_secret`: what it actually
+is, and the `config set` trap" — including why it must be set through an
+env var rather than `zeroclaw config set`, which silently no-ops).
+
+What this side needed: send `X-Webhook-Secret` on `POST /webhook` calls
+when the gateway has a secret configured. Deliberately scoped to that one
+endpoint, because that is all ZeroClaw applies it to — `/ws/chat` (every
+Assist turn) and `/api/*` (this integration's whole config flow) are
+untouched by it, so a mismatch degrades `ai_task`, the `notify_agent`
+service and a fired watch's follow-up, but never Assist itself.
+
+New `CONF_WEBHOOK_SECRET`, an optional field in config-flow step 1, and
+`api.webhook_secret_for(entry)` resolving the effective value for the
+three `/webhook` call sites (`ai_task.py`, `conversation.py`'s
+`async_notify_agent`, `watch.py`'s `_async_fire`). Absent/blank — which
+is what *every* entry created before this looks like — means no header,
+matching a gateway with no secret set, so nothing breaks on upgrade.
+
+**An options flow was necessary, not a nicety.** There was no options or
+reconfigure flow at all, so the only way to give an existing entry a
+secret would have been removing and re-adding the integration — which
+throws away its agent selection and, worse, its registered notify-webhook
+ID, already baked into whatever `TOOLS.md` its agent was taught. The
+handler exposes only the webhook secret: host and agent are this entry's
+identity (`_async_abort_entries_match` keys on `(host, agent)`) and the
+webhook ID must stay stable, so neither belongs in an editable options
+form. Shape confirmed against real `home-assistant/core` source
+(`homeassistant/components/iss/config_flow.py`) rather than written from
+memory: `@staticmethod @callback async_get_options_flow(config_entry)`
+returning an `OptionsFlow` whose `async_step_init` calls
+`async_create_entry(data=...)` — options land in `entry.options`, not
+`entry.data`. `__init__.py` registers an update listener that reloads the
+entry, since the entities doing the calling are constructed once at setup
+and would otherwise keep the old value until a Home Assistant restart.
+
+**A real bug was caught by testing the precedence logic, not by review.**
+The obvious `entry.options.get(X) or entry.data.get(X)` is wrong: when the
+operator *clears* the field, `"" or "old"` resolves back to the
+setup-time value, so removing a secret would leave this still sending the
+stale one — 401 on every `/webhook` call, while the UI showed an empty
+field. Fixed to branch on key *presence* in `options` rather than
+truthiness. Verified with a table of seven cases (legacy entry, set at
+setup, empty at setup, options override, cleared via options, options
+only, unrelated options present) run against the real `api.py` with the
+Home Assistant modules stubbed out — the same importlib technique used
+for `personality.py` elsewhere in this file.
+
+Not verified: the options flow actually rendering and round-tripping in a
+live Home Assistant UI — the usual gap for this repo, which has no
+`pytest-homeassistant-custom-component` harness. The API shape is
+source-confirmed and everything compiles and lints clean; the header
+contract itself (name, additive-to-bearer semantics, 401 on mismatch) was
+verified end-to-end against a real ZeroClaw container on the add-on side.

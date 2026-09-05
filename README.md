@@ -77,7 +77,10 @@ Copy `custom_components/zeroclaw_conversation/` into your Home Assistant
    a locally-installed `zeroclaw` add-on. If that doesn't match your setup
    (a different install method, or more than one ZeroClaw around), you'll
    need the right one — see `docs/DECISIONS.md` if you get stuck tracking
-   it down.
+   it down. There's also an optional **webhook secret** field: fill it in
+   only if you set one in the add-on, with exactly the same value. You can
+   change it later without redoing any of this — the integration's
+   **Configure** button lets you edit just that.
 4. When picking an agent, you can also create a brand-new one right from
    this screen — just name it and choose which already-configured AI
    provider it should use. It comes pre-shaped into a respectful,

@@ -43,15 +43,39 @@ jobs:
       - name: Bring up the stack (fake model + real ZeroClaw)
         run: ADDON_REPO="${GITHUB_WORKSPACE}/.addon-zeroclaw" ./tests/e2e/up.sh
 
+      - name: Refuse to run a partially-configured e2e suite
+        run: |
+          set -euo pipefail
+          # Each test skips itself when its host isn't set, which would
+          # make a workflow that forgot a variable go green while testing
+          # nothing. Fail here instead, before pytest runs.
+          for var in ZEROCLAW_E2E_HOST ZEROCLAW_E2E_SECURED_HOST ZEROCLAW_E2E_FAKE_LLM; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::${var} is not set; the e2e suite would skip tests silently."
+              exit 1
+            fi
+          done
+        env:
+          ZEROCLAW_E2E_HOST: http://localhost:42617
+          ZEROCLAW_E2E_SECURED_HOST: http://localhost:42618
+          ZEROCLAW_E2E_FAKE_LLM: http://localhost:8081
+
       - name: Run the end-to-end suite
         env:
           ZEROCLAW_E2E_HOST: http://localhost:42617
+          ZEROCLAW_E2E_SECURED_HOST: http://localhost:42618
+          ZEROCLAW_E2E_FAKE_LLM: http://localhost:8081
           ZEROCLAW_E2E_TOKEN: e2e-token
+          ZEROCLAW_E2E_WEBHOOK_SECRET: e2e-webhook-secret
         run: python -m pytest -m e2e -q
 
       - name: ZeroClaw logs (always, for debugging a failure above)
         if: always()
         run: docker logs zc-e2e-gw || true
+
+      - name: Secured ZeroClaw logs (always)
+        if: always()
+        run: docker logs zc-e2e-gw-secret || true
 
       - name: Fake model logs
         if: always()

@@ -19,14 +19,37 @@ import aiohttp
 import pytest
 import pytest_socket
 
+E2E_HOST_VARS = (
+    "ZEROCLAW_E2E_HOST",
+    "ZEROCLAW_E2E_SECURED_HOST",
+    "ZEROCLAW_E2E_FAKE_LLM",
+)
+
+
+# NOTE: every test here skips itself when its host isn't configured,
+# which is right on a developer machine — you may only have brought half
+# the stack up. In CI that same behaviour is a trap: a workflow missing an
+# environment variable goes green while silently testing nothing. The
+# guard for that lives in the workflows as an explicit shell check before
+# pytest runs, deliberately rather than as a pytest hook here: a check
+# that runs before the suite and is obviously correct by reading beats a
+# cleverer one whose behaviour I could not reproduce locally.
+
 
 @pytest.fixture(autouse=True)
 def enable_sockets(socket_enabled):
-    """Allow real network access, but only to the gateway under test."""
-    host = urlparse(os.environ.get("ZEROCLAW_E2E_HOST", "")).hostname
+    """Allow real network access, but only to the hosts under test.
+
+    Every host the suite is configured with has to be listed: pytest-socket
+    reports a missed one as `SocketConnectBlockedError` against a bare IP,
+    which looks like a network problem rather than a fixture that needs
+    updating.
+    """
     allowed = ["127.0.0.1", "localhost"]
-    if host:
-        allowed.append(host)
+    for var in E2E_HOST_VARS:
+        host = urlparse(os.environ.get(var, "")).hostname
+        if host:
+            allowed.append(host)
     pytest_socket.socket_allow_hosts(allowed, allow_unix_socket=True)
 
 

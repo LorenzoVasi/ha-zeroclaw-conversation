@@ -31,12 +31,38 @@ MODEL_ID = "fake-model"
 
 # Substring (lowercased) -> canned reply. First match wins, so put the
 # more specific phrases first.
+RECORDED: list[dict[str, Any]] = []
+"""Every chat request this server has served, newest last.
+
+Exposed on `GET /_requests` so tests can assert on what was *sent to the
+model*, not only on what came back. That direction matters: the 0.2.1
+bug shipped a prompt containing a `vol.Schema` Python repr instead of a
+JSON schema, which no assertion on the reply could ever have caught,
+because the reply was fine — it was simply an answer to a badly-phrased
+question.
+"""
+
+MAX_RECORDED = 50
+
+
 RESPONSES: list[tuple[str, str]] = [
     # Structured `ai_task` requests, answered the way a chatty household
     # agent really answers them: correct JSON, wrapped in prose and a
     # markdown code fence. This is the shape that broke Home Assistant's
     # built-in AI suggestions against a live instance, so the e2e suite
     # reproduces it rather than assuming the model behaves.
+    # NOTE ON ORDER: every structured `ai_task` prompt also carries the
+    # boilerplate "This is an automated data request from Home Assistant"
+    # that `ai_task.py` appends, so the generic entry below matches all of
+    # them. Anything that needs a *different* structured reply has to come
+    # first — this bit me once already.
+    #
+    # Structured reply that is already clean JSON — the easy path, kept
+    # distinct so a regression in fence-stripping can't be masked by it.
+    ("richiesta pulita", '{"suggestions": ["Chiudi il garage"]}'),
+    # Structured request the model answers in prose: the integration must
+    # surface a clear error rather than invent data.
+    ("richiesta impossibile", "Mi dispiace, non ho capito cosa vuoi."),
     (
         "automated data request",
         (
@@ -45,10 +71,18 @@ RESPONSES: list[tuple[str, str]] = [
             "Fammi sapere."
         ),
     ),
+    # Greeting-by-name: the reply echoes the name so a test can prove the
+    # speaker context actually reached the model, rather than assuming.
+    ("lorenzo", "Ciao Lorenzo! Come posso aiutarti in casa?"),
     ("ping", "pong"),
     ("lavatrice", "La lavatrice ha finito, avvio l'asciugatrice."),
     ("chi sei", "Sono l'assistente di casa."),
     ("hello", "Hello! How can I help around the house?"),
+    # Fired-watch follow-up and the notify_agent service both arrive as
+    # ordinary one-shot turns; distinct replies make them identifiable in
+    # the recorded requests.
+    ("accendi light.luci_scale", "Fatto, ho acceso le luci delle scale."),
+    ("automazione", "Ricevuto, me ne occupo io."),
 ]
 
 DEFAULT_RESPONSE = "ok"
@@ -124,6 +158,18 @@ async def handle_models(_request: web.Request) -> web.Response:
     )
 
 
+async def handle_requests(_request: web.Request) -> web.Response:
+    """`GET /_requests` — what this server has been asked, for assertions
+    about the prompt. Not part of any real API; purely a test affordance."""
+    return web.json_response({"requests": RECORDED})
+
+
+async def handle_reset(_request: web.Request) -> web.Response:
+    """`POST /_reset` — clear the recording between tests."""
+    RECORDED.clear()
+    return web.json_response({"status": "ok"})
+
+
 async def handle_chat_completions(request: web.Request) -> web.StreamResponse:
     """`POST /v1/chat/completions`, streaming or not."""
     try:
@@ -131,7 +177,26 @@ async def handle_chat_completions(request: web.Request) -> web.StreamResponse:
     except Exception:  # noqa: BLE001 - a malformed body is the caller's bug
         return web.json_response({"error": "invalid JSON"}, status=400)
 
-    reply = _reply_for(body.get("messages", []))
+    messages = body.get("messages", [])
+    RECORDED.append(
+        {
+            "model": body.get("model"),
+            "stream": bool(body.get("stream")),
+            "messages": messages,
+            # Everything the caller sent beyond the standard fields —
+            # `chat_template_kwargs` and friends ride in here, so a test
+            # can assert the add-on's provider seeding actually reaches
+            # the wire instead of only reaching config.toml.
+            "extra": {
+                k: v
+                for k, v in body.items()
+                if k not in {"model", "messages", "stream"}
+            },
+        }
+    )
+    del RECORDED[:-MAX_RECORDED]
+
+    reply = _reply_for(messages)
 
     if not body.get("stream"):
         return web.json_response(_completion_body(reply))
@@ -155,6 +220,8 @@ async def handle_health(_request: web.Request) -> web.Response:
 def build_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/health", handle_health)
+    app.router.add_get("/_requests", handle_requests)
+    app.router.add_post("/_reset", handle_reset)
     app.router.add_get("/v1/models", handle_models)
     app.router.add_post("/v1/chat/completions", handle_chat_completions)
     # Some callers are configured with a base URL that already ends in

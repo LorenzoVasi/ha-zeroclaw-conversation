@@ -123,9 +123,18 @@ pip install -r requirements_test.txt
 python -m pytest
 ```
 
-That runs against real Home Assistant core (via
+On **Windows** that install fails: one of Home Assistant's test
+dependencies builds from source and wants a Visual Studio toolchain. Run
+it in Linux instead — same thing CI uses, no build tools needed:
+
+```bash
+docker build -t ha-pytest -f tests/Dockerfile .
+docker run --rm -v "$(pwd):/repo" ha-pytest python -m pytest
+```
+
+Either way it runs against real Home Assistant core (via
 `pytest-homeassistant-custom-component`) in a couple of seconds, with no
-network and no containers — the config flow, the notify/watch webhook,
+network and no containers of its own — the config flow, the notify/watch webhook,
 state normalization, personality rendering.
 
 There's also an end-to-end suite that goes all the way through: real Home

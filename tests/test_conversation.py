@@ -102,3 +102,18 @@ async def test_empty_reply_is_a_readable_error(hass: HomeAssistant, agent_id):
 
     assert result.response.response_type == intent.IntentResponseType.ERROR
     assert "empty reply" in result.response.speech["plain"]["speech"]
+
+
+@pytest.mark.parametrize(("reply", "keep_listening"), [("Quale luce?", True), ("Fatto.", False)])
+async def test_a_question_keeps_the_conversation_open(
+    hass: HomeAssistant, agent_id, reply, keep_listening
+):
+    """Comes from building the result from the chat log: a reply ending in
+    a question mark sets `continue_conversation`, so a voice satellite
+    listens for the answer without the wake word. Before streaming, the
+    hand-built result never set it."""
+    gateway = _FakeGateway(chunks=[reply])
+    with patch(f"{MODULE}.async_stream_ws_chat", gateway.stream):
+        result = await _converse(hass, agent_id, "spegni la luce")
+
+    assert result.continue_conversation is keep_listening

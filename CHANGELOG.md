@@ -6,6 +6,35 @@ Short version: `0.MINOR.PATCH`, MINOR when the intended behaviour
 changes or grows, PATCH when something that was already meant to work
 is made to work.
 
+## 0.3.0
+
+**Assist starts answering sooner.** Replies are streamed into Assist as
+ZeroClaw writes them, so a voice assistant starts speaking on the first
+sentence instead of after the whole answer. When the agent asks you
+something back ("which light?"), a voice satellite now keeps listening
+for your answer without the wake word.
+
+**Gates and garage doors ask your phone.** When ZeroClaw wants
+confirmation before an action, your phone gets a notification with
+**Allow** / **Deny** while Assist waits. Nothing happens without a tap
+on Allow; no answer in about a minute counts as Deny. Without the
+Companion app you get a clear error naming the tool instead of a timeout.
+
+**The API token can be changed** from the integration's options (⋮ →
+Configure), so you can secure the add-on with an `api_token` without
+removing and re-adding the integration.
+
+**Session cleanup only touches its own chats.** The automatic clean-up of
+old conversations used to delete chats opened from ZeroClaw's own
+dashboard too. It now only deletes conversations it started itself
+through Assist; older ones are left alone.
+
+Also fixes the first turn of every Assist conversation going to a
+different ZeroClaw session from the rest of it.
+
+Works with any add-on version; add-on 0.3.0 is recommended (ZeroClaw
+0.8.6, Home Assistant tool names read live).
+
 ## 0.2.2
 
 **Fixes the AI Task entity disappearing** — `AI Task entity

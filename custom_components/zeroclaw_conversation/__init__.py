@@ -20,6 +20,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DATA_WATCH_MANAGER, DOMAIN
+from .session_cleanup import async_remove_registry
 from .watch import WatchManager
 from .webhook import async_register_webhook, async_unregister_webhook
 
@@ -58,3 +59,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     await async_unregister_webhook(hass, entry)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Drop this entry's session registry file (`session_cleanup.py`) —
+    the sessions it lists are left on ZeroClaw untouched."""
+    await async_remove_registry(hass, entry.entry_id)

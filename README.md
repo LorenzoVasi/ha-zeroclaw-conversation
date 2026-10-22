@@ -40,7 +40,12 @@ which runs ZeroClaw itself — install that one first.
   — a new Home Assistant service lets any automation hand it an event
   directly.
 - **Tidies up after itself**, clearing out old, abandoned conversations on
-  its own so nothing piles up unnoticed.
+  its own so nothing piles up unnoticed. It only ever deletes
+  conversations it opened itself through Assist, once they've been idle
+  for 24 hours: chats you start from ZeroClaw's own dashboard, Telegram,
+  or any other client are never touched, even on the same agent.
+  Conversations from before version 0.2.3 aren't on its list and are left
+  alone too.
 - **Works as an AI Task provider** too, so scripts and automations can ask
   it to generate data on demand, separately from Assist.
 

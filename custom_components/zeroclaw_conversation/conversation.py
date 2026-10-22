@@ -40,7 +40,7 @@ from .api import (
 )
 from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
 from .person_notify import async_resolve_person_name
-from .session_cleanup import async_setup_cleanup
+from .session_cleanup import SessionRegistry, async_setup_cleanup
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,9 +81,17 @@ async def async_setup_entry(
     and periodic zombie-session cleanup (`session_cleanup.py`): every
     Assist chat window mints a fresh ZeroClaw session when reopened (see
     this module's own docstring), and nothing on ZeroClaw's own side ever
-    expires the previous one.
+    expires the previous one. Cleanup only deletes sessions recorded in this
+    entry's `SessionRegistry`, i.e. ones this entity itself opened — and
+    only exists for an entry with a named agent (see `_async_cleanup`), so
+    an "auto" entry records nothing it would never clean up.
     """
-    async_add_entities([ZeroClawConversationEntity(entry)])
+    registry: SessionRegistry | None = None
+    if entry.data.get(CONF_AGENT):
+        registry = SessionRegistry(hass, entry.entry_id)
+        await registry.async_load()
+
+    async_add_entities([ZeroClawConversationEntity(entry, registry)])
 
     platform = entity_platform.async_get_current_platform()
     platform.async_register_entity_service(
@@ -92,7 +100,8 @@ async def async_setup_entry(
         "async_notify_agent",
     )
 
-    async_setup_cleanup(hass, entry)
+    if registry is not None:
+        async_setup_cleanup(hass, entry, registry)
 
 
 class ZeroClawConversationEntity(conversation.ConversationEntity):
@@ -119,8 +128,11 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
     # just via its own MCP tool calls rather than HA's local intent system.
     _attr_supported_features = conversation.ConversationEntityFeature.CONTROL
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(
+        self, entry: ConfigEntry, registry: SessionRegistry | None = None
+    ) -> None:
         self._entry = entry
+        self._registry = registry
         self._attr_unique_id = entry.entry_id
         self._host: str = entry.data[CONF_HOST].rstrip("/")
         self._token: str = entry.data.get(CONF_API_TOKEN) or ""
@@ -189,6 +201,12 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
             is_new_conversation,
             "added" if outgoing_text != user_input.text else "skipped",
         )
+
+        # Recorded before the call, so a session ZeroClaw persists is
+        # always one `session_cleanup.py` is allowed to delete later — and
+        # nothing it didn't get from here ever is.
+        if self._registry is not None:
+            self._registry.async_add(conversation_id)
 
         try:
             reply = await async_call_ws_chat(

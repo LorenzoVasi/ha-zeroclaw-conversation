@@ -1627,6 +1627,40 @@ confirmed working; the scheduling and age-filtering logic around them
 follows directly from that but hasn't been watched actually fire on a
 live schedule.
 
+### Correction: the filter proved nothing about ownership (2026-10-22)
+
+PR review: "agent alias matches, no `channel_id`, idle >24h" is not a
+test of *who created* a session. ZeroClaw's own dashboard chats over
+`/ws/chat` too, with the same agent and no channel — so did any script
+or other client — and all of those matched and were permanently deleted,
+by a feature on by default that nobody had switched on.
+
+Fix: a per-entry `SessionRegistry` (`session_cleanup.py`, a `Store` at
+`.storage/zeroclaw_conversation_sessions_<entry_id>`) records every
+`session_id` `conversation.py` passes to `/ws/chat`, before the call.
+Cleanup deletes only sessions in it; the old agent/channel checks stay as
+a second guard. Matched on the listing's `session_id`, which is exactly
+the id this integration sent: `ws.rs` persists `/ws/chat` sessions under
+`gw_<session_id>` and `handle_api_sessions_list` (`api.rs`) strips that
+prefix for display — read from source, and the e2e test that lists and
+deletes a session already depends on the same equality.
+
+One `Store` per entry rather than one shared file, because two entries can
+point at the same gateway and agent and each must only clean up its own.
+Ids ZeroClaw no longer lists are pruned on every pass so the file can't
+grow forever; an id pruned in the narrow window before ZeroClaw persists
+it is re-recorded on the conversation's next turn (recording happens every
+turn, a no-op when already known). The file is removed with the entry
+(`__init__.async_remove_entry`). "Auto" entries still do no cleanup and
+now record nothing either.
+
+Accepted cost: sessions created before this change aren't in any registry
+and are never cleaned up. Leaving some stale sessions behind is the safe
+direction; deleting someone's chat is not. A prefix on the `session_id`
+was the alternative considered and rejected: it would have broken
+continuity of Assist conversations open at upgrade, and still deleted
+anything else that happened to use the same prefix.
+
 ## "Voice doesn't work from the iOS Companion app" — not a bug in this repo
 
 2026-08-28: user report — the agent worked from the web frontend and from

@@ -2299,3 +2299,45 @@ under one session and turn 2 onwards under another. The entity now uses
 by `tests/test_conversation.py`. An empty reply, which adds no assistant
 content and makes `async_get_result_from_chat_log` raise, is answered with
 a readable error instead.
+
+## Approving gated tools from the speaker's phone (2026-10-22)
+
+The add-on puts the cover tools in `always_ask` so the agent can't open
+the gate unattended, and the morning's fix made any `approval_request`
+fail fast with the tool's name. Together that meant gated tools were not
+*confirmed* from Assist, just unusable — and locks, which Home Assistant
+only drives through the generic always-free `HassTurnOn`/`HassTurnOff`,
+had only a personality-file instruction between them and the agent.
+
+`approval.py` now answers an `approval_request` by sending an actionable
+notification (Allow / Deny) to the mobile_app devices of whoever is
+talking (`Context.user_id`, falling back to the agent's last speaker, the
+same join `person_notify.py` uses) and waiting for the tap, then sends
+ZeroClaw the decision; the turn carries on either way, so a refusal gets
+the agent's own reply. `api.async_stream_ws_chat` takes it as an
+`approval_handler` and suspends its idle timeout while it waits.
+
+Choices, each to keep "approved" meaning "a person tapped Allow on this
+request":
+
+- **No answer is a refusal**, after at most 90s — under ZeroClaw's own
+  120s, so the refusal is ours, sent while the request is still pending.
+- **Taps are matched on a per-request action id**; a stale tap from an
+  earlier question can't approve this one (tested).
+- **No device to ask → old behaviour**: refuse and raise the
+  "add it to auto_approve" error. No silent approve, no silent hang.
+- **Only that user's phones.** Asking every phone in the house would let
+  anyone answer for the speaker.
+
+Mechanics read at the 2026.10.2 tag, not assumed: actionable
+notifications need the legacy per-device `notify.mobile_app_<device
+name>` service (`targets` keyed by `device_name` in `mobile_app/notify.py`;
+`notify.send_message` takes no `data`). The tap arrives as
+`mobile_app_notification_action`, which the Companion app fires — that
+contract is the app's documentation, not core source, so it's the one
+piece only a real phone can confirm. The question is cleared from every
+phone afterwards (`clear_notification` + its `tag`).
+
+Not done: a spoken/typed "yes" in Assist itself. ZeroClaw binds a pending
+approval to the open socket, and an Assist turn can't stay open across
+the user's next message.

@@ -40,6 +40,7 @@ from .api import (
     webhook_secret_for,
 )
 from .const import CONF_AGENT, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
+from .approval import async_ask_on_phone
 from .person_notify import async_resolve_person_name
 from .session_cleanup import SessionRegistry, async_setup_cleanup
 
@@ -231,6 +232,19 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
         if self._registry is not None:
             self._registry.async_add(conversation_id)
 
+        async def _ask(tool: str, summary: str, timeout_secs: int) -> bool | None:
+            # A gated tool (e.g. opening a cover) is confirmed on the
+            # speaker's phone instead of being refused outright — see
+            # approval.py.
+            return await async_ask_on_phone(
+                self.hass,
+                self._entry,
+                user_input.context.user_id,
+                tool,
+                summary,
+                timeout_secs,
+            )
+
         async def _deltas():
             yield {"role": "assistant"}
             async for chunk in async_stream_ws_chat(
@@ -240,6 +254,7 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
                 outgoing_text,
                 conversation_id,
                 agent=self._agent,
+                approval_handler=_ask,
             ):
                 yield {"content": chunk}
 

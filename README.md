@@ -36,6 +36,12 @@ which runs ZeroClaw itself — install that one first.
   done, then start the dryer") and it arms a watch instead of endlessly
   checking; every watch it's keeping shows up as its own entity, so you
   can always see what it's waiting for.
+- **Asks you before risky actions.** When the agent wants to do something
+  ZeroClaw is set to confirm first (opening a gate or a garage door, for
+  example), your phone gets a notification with **Allow** / **Deny**
+  buttons while Assist waits. Nothing runs without a tap on Allow; no
+  answer within about a minute counts as Deny. Needs the Home Assistant
+  Companion app on the phone of whoever is talking.
 - **Can be triggered by your own automations**, not just by talking to it
   — a new Home Assistant service lets any automation hand it an event
   directly.

@@ -2341,3 +2341,21 @@ phone afterwards (`clear_notification` + its `tag`).
 Not done: a spoken/typed "yes" in Assist itself. ZeroClaw binds a pending
 approval to the open socket, and an Assist turn can't stay open across
 the user's next message.
+
+## "Continuous conversation" option (2026-10-22)
+
+Asked for: talking back and forth with a voice satellite without
+repeating the wake word every turn. Home Assistant has no open-ended live
+voice session — Assist is turn-based — but a `ConversationResult` with
+`continue_conversation = True` makes a satellite listen again right after
+speaking, and its own silence detection ends the session when nobody
+talks. Home Assistant already sets it when a reply ends in a question
+(`ChatLog.continue_conversation`, read at the 2026.10.2 tag), which this
+integration gets for free since streaming went through the chat log.
+
+The option (options flow, off by default) sets it after *every* reply.
+Off by default because the microphone reopening after each answer can
+pick up a TV or other voices. Error results never set it — reopening the
+microphone on a failure would just loop on it. `ConversationResult` is a
+plain (non-frozen) dataclass, so the flag is set on the chat-log result
+rather than rebuilding it.

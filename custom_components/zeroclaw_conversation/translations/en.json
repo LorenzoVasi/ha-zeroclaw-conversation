@@ -48,11 +48,13 @@
         "description": "Change the API token or the webhook secret without removing and re-adding the integration — useful after rotating it in the zeroclaw add-on.",
         "data": {
           "api_token": "API token",
-          "webhook_secret": "Webhook secret (optional)"
+          "webhook_secret": "Webhook secret (optional)",
+          "continuous_conversation": "Continuous conversation"
         },
         "data_description": {
           "api_token": "Must match the zeroclaw add-on's own \"api_token\" option exactly. Leave blank if the add-on has none set.",
-          "webhook_secret": "Must match the zeroclaw add-on's own \"webhook_secret\" option exactly. Leave blank if the add-on has none set."
+          "webhook_secret": "Must match the zeroclaw add-on's own \"webhook_secret\" option exactly. Leave blank if the add-on has none set.",
+          "continuous_conversation": "Voice satellites keep listening after every reply, so you can keep talking without repeating the wake word; the session ends after a few seconds of silence. Off: they only keep listening when the agent asks a question. The microphone reopening after every answer can pick up a TV or other voices in the room."
         }
       }
     }

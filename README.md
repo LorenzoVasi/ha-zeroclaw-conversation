@@ -25,6 +25,11 @@ which runs ZeroClaw itself — install that one first.
   whatever it's set up to handle).
 - **Remembers the conversation** while you're talking, and starts fresh
   each time you open a new one — no mixing up unrelated chats.
+- **Talks back as it thinks**: replies are streamed, so a voice assistant
+  starts speaking on the first sentence. When the agent asks you
+  something, a voice satellite keeps listening for your answer; turn on
+  **Continuous conversation** in the options to keep it listening after
+  every reply, without repeating the wake word.
 - **Knows who it's talking to.** If your Home Assistant account is linked
   to one of your household's people, it recognizes you and greets you by
   name at the start of a conversation.

@@ -54,6 +54,7 @@ from .api import (
 from .const import (
     CONF_AGENT,
     CONF_API_TOKEN,
+    CONF_CONTINUOUS_CONVERSATION,
     CONF_HA_URL,
     CONF_HOST,
     CONF_WEBHOOK_ID,
@@ -472,6 +473,12 @@ class ZeroClawOptionsFlow(OptionsFlow):
                 {
                     vol.Optional(CONF_API_TOKEN, default=current_token): str,
                     vol.Optional(CONF_WEBHOOK_SECRET, default=current): str,
+                    vol.Optional(
+                        CONF_CONTINUOUS_CONVERSATION,
+                        default=self.config_entry.options.get(
+                            CONF_CONTINUOUS_CONVERSATION, False
+                        ),
+                    ): bool,
                 }
             ),
         )

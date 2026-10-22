@@ -39,7 +39,13 @@ from .api import (
     async_stream_ws_chat,
     webhook_secret_for,
 )
-from .const import CONF_AGENT, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
+from .const import (
+    CONF_AGENT,
+    CONF_CONTINUOUS_CONVERSATION,
+    CONF_HOST,
+    DATA_LAST_USER_ID,
+    DOMAIN,
+)
 from .approval import async_ask_on_phone
 from .person_notify import async_resolve_person_name
 from .session_cleanup import SessionRegistry, async_setup_cleanup
@@ -274,7 +280,12 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
             return _error_result(
                 user_input, conversation_id, "ZeroClaw error: empty reply"
             )
-        return conversation.async_get_result_from_chat_log(user_input, chat_log)
+        result = conversation.async_get_result_from_chat_log(user_input, chat_log)
+        # Read at call time, not cached at setup: an options change reloads
+        # the entry anyway, but this keeps the source of truth in one place.
+        if self._entry.options.get(CONF_CONTINUOUS_CONVERSATION):
+            result.continue_conversation = True
+        return result
 
     async def async_notify_agent(self, message: str) -> None:
         """Send `message` to this agent as one stateless turn — the

@@ -12,7 +12,10 @@ is made to work.
 ZeroClaw writes them, so a voice assistant starts speaking on the first
 sentence instead of after the whole answer. When the agent asks you
 something back ("which light?"), a voice satellite now keeps listening
-for your answer without the wake word.
+for your answer without the wake word. Turn on **Continuous
+conversation** in the integration's options to keep it listening after
+every reply, so you can talk back and forth without the wake word; it
+stops after a few seconds of silence.
 
 **Gates and garage doors ask your phone.** When ZeroClaw wants
 confirmation before an action, your phone gets a notification with

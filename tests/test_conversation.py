@@ -117,3 +117,38 @@ async def test_a_question_keeps_the_conversation_open(
         result = await _converse(hass, agent_id, "spegni la luce")
 
     assert result.continue_conversation is keep_listening
+
+
+async def _enable_continuous(hass: HomeAssistant) -> None:
+    from custom_components.zeroclaw_conversation.const import (
+        CONF_CONTINUOUS_CONVERSATION,
+    )
+
+    [entry] = hass.config_entries.async_entries(DOMAIN)
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_CONTINUOUS_CONVERSATION: True}
+    )
+    await hass.async_block_till_done()
+
+
+async def test_continuous_option_keeps_listening_after_any_reply(
+    hass: HomeAssistant, agent_id
+):
+    await _enable_continuous(hass)
+    gateway = _FakeGateway(chunks=["Fatto."])
+    with patch(f"{MODULE}.async_stream_ws_chat", gateway.stream):
+        result = await _converse(hass, agent_id, "spegni la luce")
+
+    assert result.continue_conversation is True
+
+
+async def test_continuous_option_does_not_keep_an_error_open(
+    hass: HomeAssistant, agent_id
+):
+    """Reopening the microphone on a failure would just loop on it."""
+    await _enable_continuous(hass)
+    gateway = _FakeGateway(chunks=[], error="ZeroClaw aborted the reply")
+    with patch(f"{MODULE}.async_stream_ws_chat", gateway.stream):
+        result = await _converse(hass, agent_id, "ciao")
+
+    assert result.continue_conversation is False

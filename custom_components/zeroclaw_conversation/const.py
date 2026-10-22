@@ -87,4 +87,13 @@ SIGNAL_WATCH_ADDED = f"{DOMAIN}_watch_added_{{entry_id}}"
 SIGNAL_WATCH_REMOVED = f"{DOMAIN}_watch_removed_{{entry_id}}"
 SIGNAL_WATCH_UPDATED = f"{DOMAIN}_watch_updated_{{entry_id}}"
 
+# Options-flow toggle, off by default: keep a voice satellite listening after
+# *every* reply, not only after one ending in a question (which Home
+# Assistant already does on its own — `ChatLog.continue_conversation`). Lets
+# a back-and-forth run without repeating the wake word; the satellite still
+# closes the session after a few seconds of silence. Off by default because
+# the microphone reopening after every answer can pick up a TV or other
+# voices in the room. See docs/DECISIONS.md.
+CONF_CONTINUOUS_CONVERSATION = "continuous_conversation"
+
 DEFAULT_TIMEOUT = 30

@@ -1661,6 +1661,28 @@ was the alternative considered and rejected: it would have broken
 continuity of Assist conversations open at upgrade, and still deleted
 anything else that happened to use the same prefix.
 
+## Tool approval requests over `/ws/chat`: deny at once, say which tool
+
+User report (2026-10-22), right after updating Home Assistant: small talk
+in Assist worked, "spegni le luci in camera" failed with `ZeroClaw error:
+Timed out waiting for ZeroClaw's reply`. The difference is a tool call.
+The household's ZeroClaw runs `level = "supervised"`, which auto-runs only
+the tools listed by exact name in the risk profile's `auto_approve`
+(`home_assistant__HassTurnOff`, …); anything else makes `/ws/chat` send an
+`approval_request` frame and wait up to 120s (`WS_APPROVAL_TIMEOUT_SECS`,
+`ws.rs`) for an `approval_response`. `api.async_call_ws_chat` ignored
+every frame other than `done`/`error`, so it waited until its own 30s
+timeout — a message pointing nowhere near the cause. Most likely the HA
+update changed which MCP tools the agent picked; not confirmed from logs.
+
+Fix: on `approval_request`, send `{"type": "approval_response",
+"request_id": ..., "decision": "deny"}` (shape read from `ws.rs`) and
+raise immediately with the tool's name and "add it to auto_approve".
+Denied, never approved: whether a tool runs unattended is the household's
+decision in ZeroClaw's config, and an Assist dialog has no way to ask.
+Not handled: a turn that is simply slower than `DEFAULT_TIMEOUT` still
+times out the same way as before.
+
 ## "Voice doesn't work from the iOS Companion app" — not a bug in this repo
 
 2026-08-28: user report — the agent worked from the web frontend and from

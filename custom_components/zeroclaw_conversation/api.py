@@ -147,6 +147,19 @@ async def async_call_ws_chat(
     `"error"`. `{"type": "message", "content": "..."}` is the outbound
     frame; the reply is `{"type": "done", "full_response": "..."}`.
 
+    `{"type": "approval_request", "request_id": ..., "tool": ...}` is the
+    exception: ZeroClaw's `supervised` autonomy level sends it for any tool
+    not in the risk profile's `auto_approve` list, then waits up to 120s
+    (`WS_APPROVAL_TIMEOUT_SECS` in `ws.rs`) for an `approval_response`.
+    Nobody in an Assist dialog can answer it, so it used to sit unanswered
+    until this function's own 30s timeout fired — reported as a bare
+    "Timed out waiting for ZeroClaw's reply" that pointed nowhere near the
+    cause (2026-10-22, after a Home Assistant update changed which MCP tools
+    the agent reached for). Now it's denied straight away and raised as an
+    error naming the tool, so the fix (add it to `auto_approve`) is in the
+    message itself. Denied, not approved: whether a tool runs unattended is
+    the household's call in ZeroClaw's config, not this integration's.
+
     Raises ZeroClawError on any failure — same contract as
     `async_call_webhook`.
     """
@@ -176,7 +189,22 @@ async def async_call_ws_chat(
                         raise ZeroClawError(
                             str(data.get("message", "unknown error"))
                         )
-                    # session_start, connected, approval_request, etc. —
+                    if msg_type == "approval_request":
+                        tool = data.get("tool") or "unknown"
+                        await ws.send_json(
+                            {
+                                "type": "approval_response",
+                                "request_id": data.get("request_id"),
+                                "decision": "deny",
+                            }
+                        )
+                        raise ZeroClawError(
+                            f"ZeroClaw asked for approval to use the tool "
+                            f"'{tool}', which can't be given from Assist. Add "
+                            f"'{tool}' to auto_approve in ZeroClaw's risk "
+                            f"profile, then try again"
+                        )
+                    # session_start, connected, chunk, tool_call, etc. —
                     # not the final reply, keep waiting.
                 raise ZeroClawError(
                     "ZeroClaw closed the chat connection without a reply"

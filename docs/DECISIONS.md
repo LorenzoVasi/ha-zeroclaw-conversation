@@ -2248,3 +2248,23 @@ side — which is the version worth having.
 
 Meanwhile `ai_task.py` continues to declare `GENERATE_DATA` only. That
 is not an oversight and the docstring now says so with the evidence.
+
+## API token in the options flow (2026-10-22)
+
+The add-on's log on the household's instance showed `api_token: EMPTY`
+and `Pairing: DISABLED (all requests accepted)`: anything on Home
+Assistant's internal network could drive the agent, and the agent can
+control the house. Setting a token on the add-on is the fix, but this
+integration stored the token in `entry.data` at setup with no way to
+change it — following the add-on meant removing and re-adding the entry,
+losing the agent selection and the notify-webhook ID already taught to
+`TOOLS.md`.
+
+The token is now in the options flow next to the webhook secret, read
+everywhere through `api.api_token_for(entry)` with the same precedence
+`webhook_secret_for` already has (presence in `options` wins, so
+clearing the field clears it — see that function's docstring for the bug
+that rule exists for). `__init__.py`'s update listener already reloads
+the entry on an options change, so the new token takes effect without a
+restart. Order for an operator: set the token on the add-on, restart it,
+then paste the same value into this integration's options.

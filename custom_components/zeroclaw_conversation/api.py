@@ -13,7 +13,7 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import CONF_WEBHOOK_SECRET, DEFAULT_TIMEOUT
+from .const import CONF_API_TOKEN, CONF_WEBHOOK_SECRET, DEFAULT_TIMEOUT
 
 
 class ZeroClawError(Exception):
@@ -44,6 +44,22 @@ def webhook_secret_for(entry) -> str | None:
     else:
         value = entry.data.get(CONF_WEBHOOK_SECRET)
     return value or None
+
+
+def api_token_for(entry) -> str:
+    """This entry's effective bearer token, `""` when it has none.
+
+    Same precedence as `webhook_secret_for`, for the same reason: an
+    options-flow edit wins over the setup-time value, and *presence* in
+    `options` decides it, so clearing the field really clears it. Exists
+    because an install set up while the add-on had no `api_token` (pairing
+    off) otherwise had no way to start sending one once the add-on gets a
+    token, short of removing and re-adding the integration — which loses
+    the agent selection and the notify-webhook ID taught to `TOOLS.md`.
+    """
+    if CONF_API_TOKEN in entry.options:
+        return entry.options[CONF_API_TOKEN] or ""
+    return entry.data.get(CONF_API_TOKEN) or ""
 
 
 async def async_call_webhook(

@@ -34,8 +34,8 @@ from homeassistant.helpers import llm
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.json import json_loads
 
-from .api import ZeroClawError, async_call_webhook, webhook_secret_for
-from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DOMAIN
+from .api import ZeroClawError, api_token_for, async_call_webhook, webhook_secret_for
+from .const import CONF_AGENT, CONF_HOST, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -206,7 +206,7 @@ class ZeroClawAITaskEntity(ai_task.AITaskEntity):
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_ai_task"
         self._host: str = entry.data[CONF_HOST].rstrip("/")
-        self._token: str = entry.data.get(CONF_API_TOKEN) or ""
+        self._token: str = api_token_for(entry)
         self._agent: str = entry.data.get(CONF_AGENT) or ""
         # See the matching comment in conversation.py — disambiguates
         # multiple config entries against the same gateway/different agents.

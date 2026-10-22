@@ -45,11 +45,13 @@
     "step": {
       "init": {
         "title": "ZeroClaw options",
-        "description": "Change the webhook secret without removing and re-adding the integration — useful after rotating it in the zeroclaw add-on.",
+        "description": "Change the API token or the webhook secret without removing and re-adding the integration — useful after rotating it in the zeroclaw add-on.",
         "data": {
+          "api_token": "API token",
           "webhook_secret": "Webhook secret (optional)"
         },
         "data_description": {
+          "api_token": "Must match the zeroclaw add-on's own \"api_token\" option exactly. Leave blank if the add-on has none set.",
           "webhook_secret": "Must match the zeroclaw add-on's own \"webhook_secret\" option exactly. Leave blank if the add-on has none set."
         }
       }

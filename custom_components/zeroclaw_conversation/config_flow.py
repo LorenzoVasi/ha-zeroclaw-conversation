@@ -43,6 +43,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import (
     ZeroClawError,
+    api_token_for,
     async_apply_quickstart,
     async_fetch_agents,
     async_fetch_configured_providers,
@@ -435,14 +436,16 @@ class ZeroClawConversationConfigFlow(ConfigFlow, domain=DOMAIN):
 class ZeroClawOptionsFlow(OptionsFlow):
     """Edit the settings that can legitimately change on a live entry.
 
-    Only the webhook secret for now, and deliberately so: host and agent
+    The API token and the webhook secret, and deliberately only those: host and agent
     are this entry's identity (`_async_abort_entries_match` keys on
     `(host, agent)`), and the notify-webhook ID must stay stable because
     it's already baked into whatever `TOOLS.md` the agent was taught. The
     webhook secret is the one value an operator genuinely has to be able
     to rotate — the add-on side can change it at any time, and without
     this the only way to follow suit would be removing and re-adding the
-    integration.
+    integration. The API token is the same case: an entry set up while the
+    add-on had no `api_token` (pairing off) has to be able to start sending
+    one once the add-on is given one.
 
     Written to `entry.options`, which `api.webhook_secret_for()` reads in
     preference to `entry.data`; `__init__.py` reloads the entry on change
@@ -458,6 +461,7 @@ class ZeroClawOptionsFlow(OptionsFlow):
                 data=self.config_entry.options | user_input
             )
 
+        current_token = api_token_for(self.config_entry)
         current = self.config_entry.options.get(
             CONF_WEBHOOK_SECRET,
             self.config_entry.data.get(CONF_WEBHOOK_SECRET, ""),
@@ -466,6 +470,7 @@ class ZeroClawOptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Optional(CONF_API_TOKEN, default=current_token): str,
                     vol.Optional(CONF_WEBHOOK_SECRET, default=current): str,
                 }
             ),

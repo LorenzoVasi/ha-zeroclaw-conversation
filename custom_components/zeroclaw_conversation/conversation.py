@@ -34,11 +34,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .api import (
     ZeroClawError,
+    api_token_for,
     async_call_webhook,
     async_call_ws_chat,
     webhook_secret_for,
 )
-from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
+from .const import CONF_AGENT, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
 from .person_notify import async_resolve_person_name
 from .session_cleanup import SessionRegistry, async_setup_cleanup
 
@@ -135,7 +136,7 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
         self._registry = registry
         self._attr_unique_id = entry.entry_id
         self._host: str = entry.data[CONF_HOST].rstrip("/")
-        self._token: str = entry.data.get(CONF_API_TOKEN) or ""
+        self._token: str = api_token_for(entry)
         self._agent: str = entry.data.get(CONF_AGENT) or ""
         # Disambiguates multiple config entries against the same gateway,
         # each targeting a different ZeroClaw agent — without this, every

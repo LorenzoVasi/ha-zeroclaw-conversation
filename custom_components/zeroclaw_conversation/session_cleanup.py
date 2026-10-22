@@ -40,8 +40,8 @@ from homeassistant.helpers.event import async_call_later, async_track_time_inter
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .api import ZeroClawError, async_delete_session, async_list_sessions
-from .const import CONF_AGENT, CONF_API_TOKEN, CONF_HOST, DOMAIN
+from .api import ZeroClawError, api_token_for, async_delete_session, async_list_sessions
+from .const import CONF_AGENT, CONF_HOST, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -142,7 +142,7 @@ async def _async_cleanup(
     hass: HomeAssistant, entry: ConfigEntry, registry: SessionRegistry
 ) -> None:
     host = entry.data[CONF_HOST].rstrip("/")
-    token = entry.data.get(CONF_API_TOKEN) or ""
+    token = api_token_for(entry)
     agent = entry.data.get(CONF_AGENT) or ""
 
     if not agent:

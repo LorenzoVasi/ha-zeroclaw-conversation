@@ -53,10 +53,9 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .api import ZeroClawError, async_call_webhook, webhook_secret_for
+from .api import ZeroClawError, api_token_for, async_call_webhook, webhook_secret_for
 from .const import (
     CONF_AGENT,
-    CONF_API_TOKEN,
     CONF_HOST,
     SIGNAL_WATCH_ADDED,
     SIGNAL_WATCH_REMOVED,
@@ -188,7 +187,7 @@ class WatchManager:
             await async_call_webhook(
                 self.hass,
                 entry.data[CONF_HOST].rstrip("/"),
-                entry.data.get(CONF_API_TOKEN) or "",
+                api_token_for(entry),
                 watch.message,
                 uuid.uuid4().hex,
                 agent=entry.data.get(CONF_AGENT) or "",

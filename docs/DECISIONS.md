@@ -2268,3 +2268,34 @@ that rule exists for). `__init__.py`'s update listener already reloads
 the entry on an options change, so the new token takes effect without a
 restart. Order for an operator: set the token on the add-on, restart it,
 then paste the same value into this integration's options.
+
+## Streaming replies into Assist, and one session id per conversation (2026-10-22)
+
+`/ws/chat` has always streamed the reply as `{"type": "chunk"}` frames
+before the final `done` (confirmed in `ws.rs` at v0.8.5, not only on
+master); this integration ignored them and waited for `done`, so a voice
+pipeline stayed silent for the whole turn, tool calls included, and a
+30s cap on the *whole* turn was the only timeout. Now:
+
+- `api.async_stream_ws_chat` yields chunks as they arrive (falling back to
+  `done.full_response` when nothing streamed), treats `aborted` as an
+  error, and times out on *silence* — `DEFAULT_TIMEOUT` between frames —
+  rather than on total duration. `async_call_ws_chat` stays as a collected
+  wrapper for callers with nothing to stream to (the e2e suite).
+- The conversation entity sets `_attr_supports_streaming = True` and feeds
+  the chunks through `chat_log.async_add_delta_content_stream`, then
+  returns `conversation.async_get_result_from_chat_log` — the same shape
+  as `ollama/conversation.py` at the 2026.10.2 tag, read rather than
+  assumed from the developer docs.
+
+Found while wiring that: the entity minted its own `conversation_id`
+(`uuid4().hex`) when Home Assistant passed none, but Home Assistant had
+already minted one for the chat session (a ULID, `helpers/chat_session.py`)
+— and the chat-log result hands *that* one back to the frontend. With the
+old hand-built result the entity's id round-tripped, so it worked by
+accident; with the chat-log result, turn 1 would have gone to ZeroClaw
+under one session and turn 2 onwards under another. The entity now uses
+`chat_log.conversation_id` throughout (`ai_task.py` already did). Covered
+by `tests/test_conversation.py`. An empty reply, which adds no assistant
+content and makes `async_get_result_from_chat_log` raise, is answered with
+a readable error instead.

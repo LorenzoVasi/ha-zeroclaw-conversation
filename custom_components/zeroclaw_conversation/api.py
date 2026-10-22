@@ -1,13 +1,14 @@
 """Shared helper for calling a ZeroClaw gateway.
 
 Two different endpoints, for two different needs — see `async_call_webhook`
-and `async_call_ws_chat` docstrings for why they aren't interchangeable.
+and `async_stream_ws_chat` docstrings for why they aren't interchangeable.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 import aiohttp
 from homeassistant.core import HomeAssistant
@@ -132,15 +133,23 @@ async def async_call_webhook(
         raise ZeroClawError(f"Could not reach ZeroClaw at {host}: {err}") from err
 
 
-async def async_call_ws_chat(
+ApprovalHandler = Callable[[str, str, int], Awaitable["bool | None"]]
+"""`(tool, arguments_summary, timeout_secs) -> approved?` — asked when
+ZeroClaw wants approval for a tool mid-turn. `True`/`False` is a person's
+answer; `None` means nobody could be asked (see `async_stream_ws_chat`)."""
+
+
+async def async_stream_ws_chat(
     hass: HomeAssistant,
     host: str,
     token: str,
     message: str,
     session_id: str,
     agent: str | None = None,
-) -> str:
-    """Send one turn to ZeroClaw over `GET /ws/chat` and return its reply.
+    approval_handler: ApprovalHandler | None = None,
+) -> AsyncIterator[str]:
+    """Send one turn to ZeroClaw over `GET /ws/chat`, yielding the reply
+    as it streams in.
 
     Unlike `/webhook` (stateless, see `async_call_webhook`), `/ws/chat`
     accepts a client-chosen `session_id` query param that ZeroClaw uses to
@@ -155,26 +164,32 @@ async def async_call_ws_chat(
     live connection's lifecycle across separate, independent
     `_async_handle_message` calls.
 
-    Protocol (confirmed against `ws.rs`, no public doc covers the exact
-    frame sequence): the server sends `{"type": "session_start", ...}`
-    immediately on connect, before it will read anything — this function
-    doesn't wait for it (sending our `message` frame doesn't depend on it
-    arriving first) and simply ignores any frame that isn't `"done"` or
-    `"error"`. `{"type": "message", "content": "..."}` is the outbound
-    frame; the reply is `{"type": "done", "full_response": "..."}`.
+    Protocol (confirmed against `ws.rs` at v0.8.5, no public doc covers the
+    exact frame sequence): `{"type": "message", "content": "..."}` is the
+    outbound frame. The reply arrives as `{"type": "chunk", "content":
+    "..."}` deltas, yielded as they come so Assist can start speaking
+    before the turn is over, then `{"type": "done", "full_response":
+    "..."}`, whose text is only yielded when no chunk was (a provider that
+    doesn't stream). `error` and `aborted` raise; everything else
+    (`session_start`, `thinking`, `tool_call`, ...) is ignored.
 
-    `{"type": "approval_request", "request_id": ..., "tool": ...}` is the
-    exception: ZeroClaw's `supervised` autonomy level sends it for any tool
-    not in the risk profile's `auto_approve` list, then waits up to 120s
-    (`WS_APPROVAL_TIMEOUT_SECS` in `ws.rs`) for an `approval_response`.
-    Nobody in an Assist dialog can answer it, so it used to sit unanswered
-    until this function's own 30s timeout fired — reported as a bare
+    The timeout is per frame, not per turn: a turn that keeps producing
+    frames (tool calls, chunks) can take as long as it takes, one that goes
+    silent for `DEFAULT_TIMEOUT` fails. It is suspended while a person is
+    being asked to approve a tool, which has its own deadline.
+
+    `{"type": "approval_request", "request_id": ..., "tool": ...}`: ZeroClaw's
+    `supervised` autonomy level sends it for any tool not in the risk
+    profile's `auto_approve` list (and always for `always_ask` ones), then
+    waits up to 120s (`WS_APPROVAL_TIMEOUT_SECS`) for an `approval_response`.
+    It's handed to `approval_handler`, and whatever it decides is sent back
+    — the turn then carries on either way, so a refusal gets the agent's own
+    reply. When there's no handler, or it returns `None` (nobody could be
+    asked), the request is denied and raised as an error naming the tool:
+    before that, it sat unanswered until a 30s timeout reported a bare
     "Timed out waiting for ZeroClaw's reply" that pointed nowhere near the
-    cause (2026-10-22, after a Home Assistant update changed which MCP tools
-    the agent reached for). Now it's denied straight away and raised as an
-    error naming the tool, so the fix (add it to `auto_approve`) is in the
-    message itself. Denied, not approved: whether a tool runs unattended is
-    the household's call in ZeroClaw's config, not this integration's.
+    cause (2026-10-22). Never approved without a person saying yes: whether
+    a tool runs unattended is the household's call in ZeroClaw's config.
 
     Raises ZeroClawError on any failure — same contract as
     `async_call_webhook`.
@@ -190,41 +205,63 @@ async def async_call_ws_chat(
     session = async_get_clientsession(hass)
     try:
         async with asyncio.timeout(DEFAULT_TIMEOUT):
-            async with session.ws_connect(
+            ws = await session.ws_connect(
                 f"{ws_host}/ws/chat", headers=headers, params=params
-            ) as ws:
-                await ws.send_json({"type": "message", "content": message})
-                async for msg in ws:
-                    if msg.type != aiohttp.WSMsgType.TEXT:
-                        continue
-                    data = json.loads(msg.data)
-                    msg_type = data.get("type")
-                    if msg_type == "done":
-                        return data.get("full_response", "")
-                    if msg_type == "error":
-                        raise ZeroClawError(
-                            str(data.get("message", "unknown error"))
+            )
+        async with ws:
+            await ws.send_json({"type": "message", "content": message})
+            streamed = False
+            while True:
+                async with asyncio.timeout(DEFAULT_TIMEOUT):
+                    msg = await ws.receive()
+                if msg.type in (
+                    aiohttp.WSMsgType.CLOSE,
+                    aiohttp.WSMsgType.CLOSING,
+                    aiohttp.WSMsgType.CLOSED,
+                    aiohttp.WSMsgType.ERROR,
+                ):
+                    raise ZeroClawError(
+                        "ZeroClaw closed the chat connection without a reply"
+                    )
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    continue
+                data = json.loads(msg.data)
+                msg_type = data.get("type")
+                if msg_type == "chunk":
+                    if content := data.get("content"):
+                        streamed = True
+                        yield content
+                elif msg_type == "done":
+                    if not streamed and (full := data.get("full_response")):
+                        yield full
+                    return
+                elif msg_type == "error":
+                    raise ZeroClawError(str(data.get("message", "unknown error")))
+                elif msg_type == "aborted":
+                    raise ZeroClawError("ZeroClaw aborted the reply")
+                elif msg_type == "approval_request":
+                    tool = data.get("tool") or "unknown"
+                    approved = None
+                    if approval_handler is not None:
+                        approved = await approval_handler(
+                            tool,
+                            str(data.get("arguments_summary") or ""),
+                            int(data.get("timeout_secs") or 120),
                         )
-                    if msg_type == "approval_request":
-                        tool = data.get("tool") or "unknown"
-                        await ws.send_json(
-                            {
-                                "type": "approval_response",
-                                "request_id": data.get("request_id"),
-                                "decision": "deny",
-                            }
-                        )
+                    await ws.send_json(
+                        {
+                            "type": "approval_response",
+                            "request_id": data.get("request_id"),
+                            "decision": "approve" if approved else "deny",
+                        }
+                    )
+                    if approved is None:
                         raise ZeroClawError(
                             f"ZeroClaw asked for approval to use the tool "
                             f"'{tool}', which can't be given from Assist. Add "
                             f"'{tool}' to auto_approve in ZeroClaw's risk "
                             f"profile, then try again"
                         )
-                    # session_start, connected, chunk, tool_call, etc. —
-                    # not the final reply, keep waiting.
-                raise ZeroClawError(
-                    "ZeroClaw closed the chat connection without a reply"
-                )
     except TimeoutError as err:
         raise ZeroClawError(
             f"Timed out waiting for ZeroClaw's reply from {host}"
@@ -233,6 +270,27 @@ async def async_call_ws_chat(
         raise ZeroClawError(f"Could not reach ZeroClaw at {host}: {err}") from err
     except json.JSONDecodeError as err:
         raise ZeroClawError(f"ZeroClaw sent an invalid chat frame: {err}") from err
+
+
+async def async_call_ws_chat(
+    hass: HomeAssistant,
+    host: str,
+    token: str,
+    message: str,
+    session_id: str,
+    agent: str | None = None,
+) -> str:
+    """`async_stream_ws_chat`, collected into the whole reply — for callers
+    that have nothing to stream to. Approval requests are refused and
+    raised (no handler)."""
+    return "".join(
+        [
+            chunk
+            async for chunk in async_stream_ws_chat(
+                hass, host, token, message, session_id, agent=agent
+            )
+        ]
+    )
 
 
 async def async_fetch_quickstart_state(hass: HomeAssistant, host: str, token: str) -> dict:

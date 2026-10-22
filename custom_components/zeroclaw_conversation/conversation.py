@@ -36,7 +36,7 @@ from .api import (
     ZeroClawError,
     api_token_for,
     async_call_webhook,
-    async_call_ws_chat,
+    async_stream_ws_chat,
     webhook_secret_for,
 )
 from .const import CONF_AGENT, CONF_HOST, DATA_LAST_USER_ID, DOMAIN
@@ -105,6 +105,16 @@ async def async_setup_entry(
         async_setup_cleanup(hass, entry, registry)
 
 
+def _error_result(
+    user_input: conversation.ConversationInput, conversation_id: str, message: str
+) -> conversation.ConversationResult:
+    response = intent.IntentResponse(language=user_input.language)
+    response.async_set_error(intent.IntentResponseErrorCode.UNKNOWN, message)
+    return conversation.ConversationResult(
+        response=response, conversation_id=conversation_id
+    )
+
+
 class ZeroClawConversationEntity(conversation.ConversationEntity):
     """A conversation agent that delegates to a ZeroClaw gateway.
 
@@ -128,6 +138,13 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
     # assistant can't control your home" even though ZeroClaw actually can,
     # just via its own MCP tool calls rather than HA's local intent system.
     _attr_supported_features = conversation.ConversationEntityFeature.CONTROL
+    # The reply is fed into the chat log as `/ws/chat` streams it (see
+    # `_async_handle_message`), so a voice pipeline starts speaking on the
+    # first sentence instead of after the whole turn, tool calls included.
+    # Same mechanism Ollama/OpenAI/Anthropic use in home-assistant/core
+    # (`chat_log.async_add_delta_content_stream` +
+    # `async_get_result_from_chat_log`, read at the 2026.10.2 tag).
+    _attr_supports_streaming = True
 
     def __init__(
         self, entry: ConfigEntry, registry: SessionRegistry | None = None
@@ -170,8 +187,13 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
         # (below) — the same signal used here to decide whether to greet
         # the speaker by name, checked before it's overwritten.
         is_new_conversation = not user_input.conversation_id
-        conversation_id = user_input.conversation_id or uuid.uuid4().hex
-        response = intent.IntentResponse(language=user_input.language)
+        # The chat log's id, not one minted here: Home Assistant already
+        # minted it (a ULID, `helpers/chat_session.py`) and is what
+        # `async_get_result_from_chat_log` hands back to the frontend, so
+        # the next turn arrives with exactly this id. Minting a separate one
+        # here, as this used to, gave the first turn of every conversation a
+        # different ZeroClaw session from all the turns after it.
+        conversation_id = chat_log.conversation_id
 
         # Remember who's talking, per config entry — read back by
         # `webhook.py`'s notify handler (`person_notify.py`) to resolve
@@ -209,29 +231,35 @@ class ZeroClawConversationEntity(conversation.ConversationEntity):
         if self._registry is not None:
             self._registry.async_add(conversation_id)
 
-        try:
-            reply = await async_call_ws_chat(
+        async def _deltas():
+            yield {"role": "assistant"}
+            async for chunk in async_stream_ws_chat(
                 self.hass,
                 self._host,
                 self._token,
                 outgoing_text,
                 conversation_id,
                 agent=self._agent,
-            )
+            ):
+                yield {"content": chunk}
+
+        try:
+            async for _content in chat_log.async_add_delta_content_stream(
+                self.entity_id, _deltas()
+            ):
+                pass
         except ZeroClawError as err:
             _LOGGER.warning("ZeroClaw call failed: %s", err)
-            response.async_set_error(
-                intent.IntentResponseErrorCode.UNKNOWN,
-                f"ZeroClaw error: {err}",
-            )
-            return conversation.ConversationResult(
-                response=response, conversation_id=conversation_id
-            )
+            return _error_result(user_input, conversation_id, f"ZeroClaw error: {err}")
 
-        response.async_set_speech(reply)
-        return conversation.ConversationResult(
-            response=response, conversation_id=conversation_id
-        )
+        # An empty reply adds no assistant content at all, and
+        # `async_get_result_from_chat_log` then raises on the user's own
+        # message being last — answer with a readable error instead.
+        if not isinstance(chat_log.content[-1], conversation.AssistantContent):
+            return _error_result(
+                user_input, conversation_id, "ZeroClaw error: empty reply"
+            )
+        return conversation.async_get_result_from_chat_log(user_input, chat_log)
 
     async def async_notify_agent(self, message: str) -> None:
         """Send `message` to this agent as one stateless turn — the

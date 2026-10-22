@@ -10,7 +10,8 @@ from unittest.mock import patch
 import pytest
 from homeassistant.components import conversation
 from homeassistant.core import Context, HomeAssistant
-from homeassistant.helpers import entity_registry as er, intent
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import intent
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 

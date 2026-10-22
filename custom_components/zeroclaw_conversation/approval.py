@@ -152,5 +152,5 @@ async def async_ask_on_phone(
                     {"message": "clear_notification", "data": {"tag": request}},
                     blocking=False,
                 )
-            except Exception:  # noqa: BLE001 - best effort
-                pass
+            except Exception as err:  # noqa: BLE001 - best effort
+                _LOGGER.debug("Could not clear the approval on %s: %s", service, err)

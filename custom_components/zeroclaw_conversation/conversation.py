@@ -39,6 +39,7 @@ from .api import (
     async_stream_ws_chat,
     webhook_secret_for,
 )
+from .approval import async_ask_on_phone
 from .const import (
     CONF_AGENT,
     CONF_CONTINUOUS_CONVERSATION,
@@ -46,7 +47,6 @@ from .const import (
     DATA_LAST_USER_ID,
     DOMAIN,
 )
-from .approval import async_ask_on_phone
 from .person_notify import async_resolve_person_name
 from .session_cleanup import SessionRegistry, async_setup_cleanup
 
